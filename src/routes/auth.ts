@@ -109,6 +109,70 @@ auth.get("/balance/:userId/:role", async (c) => {
   }
 });
 
+auth.get("/sellers/me", async (c) => {
+  const authHeader = c.req.header("Authorization");
+  if (!authHeader || !authHeader.startsWith("Bearer ")) {
+    return c.json({ error: "Unauthorized" }, 401);
+  }
+  const token = authHeader.substring(7);
+  const secret = c.env.JWT_SECRET;
+  try {
+    const { payload } = await import("@tsndr/cloudflare-worker-jwt").then(m => m.verify(token, secret));
+    const userId = payload.userId;
+
+    const result = await c.env.D1.prepare("SELECT * FROM sellers WHERE user_id = ?").bind(userId).first();
+    if (result) {
+      return c.json(result);
+    } else {
+      return c.json({ error: "Seller profile not found" }, 404);
+    }
+  } catch {
+    return c.json({ error: "Invalid token" }, 401);
+  }
+});
+
+auth.get("/buyers/me", async (c) => {
+  const authHeader = c.req.header("Authorization");
+  if (!authHeader || !authHeader.startsWith("Bearer ")) {
+    return c.json({ error: "Unauthorized" }, 401);
+  }
+  const token = authHeader.substring(7);
+  const secret = c.env.JWT_SECRET;
+  try {
+    const { payload } = await import("@tsndr/cloudflare-worker-jwt").then(m => m.verify(token, secret));
+    const userId = payload.userId;
+
+    const result = await c.env.D1.prepare("SELECT * FROM buyers WHERE user_id = ?").bind(userId).first();
+    if (result) {
+      return c.json(result);
+    } else {
+      return c.json({ error: "Buyer profile not found" }, 404);
+    }
+  } catch {
+    return c.json({ error: "Invalid token" }, 401);
+  }
+});
+
+auth.get("/leaderboard", async (c) => {
+  const buyers = await c.env.D1.prepare(`
+    SELECT u.username, b.balance, 'buyer' as role
+    FROM users u
+    JOIN buyers b ON u.id = b.user_id
+  `).all();
+
+  const sellers = await c.env.D1.prepare(`
+    SELECT u.username, s.balance, 'seller' as role
+    FROM users u
+    JOIN sellers s ON u.id = s.user_id
+  `).all();
+
+  const leaderboard = [...(buyers.results || []), ...(sellers.results || [])]
+    .sort((a, b) => b.balance - a.balance)
+    .slice(0, 50); // Top 50
+
+  return c.json(leaderboard);
+});
+
 auth.post("/transfer", async (c) => {
   const { buyerId, sellerId, amount } = await c.req.json();
 
@@ -125,6 +189,117 @@ auth.post("/transfer", async (c) => {
   await c.env.D1.prepare("UPDATE sellers SET balance = balance + ? WHERE user_id = ?").bind(amount, sellerId).run();
 
   return c.json({ message: "Transfer successful" });
+});
+
+auth.get("/task", async (c) => {
+  const authHeader = c.req.header("Authorization");
+  if (!authHeader || !authHeader.startsWith("Bearer ")) {
+    return c.json({ error: "Unauthorized" }, 401);
+  }
+  const token = authHeader.substring(7);
+  const secret = c.env.JWT_SECRET;
+  try {
+    const { payload } = await import("@tsndr/cloudflare-worker-jwt").then(m => m.verify(token, secret));
+    const userId = payload.userId;
+
+    // Get total solved tasks globally for difficulty
+    const totalSolved = await c.env.D1.prepare("SELECT COUNT(*) as count FROM solved_tasks").first();
+    const difficulty = 24; // Keep difficulty constant
+
+    // Check if there's an active challenge
+    let activeChallenge = await c.env.D1.prepare("SELECT challenge FROM active_challenges LIMIT 1").first();
+    let challenge;
+    if (activeChallenge) {
+      challenge = activeChallenge.challenge;
+    } else {
+      // Generate new challenge and save to active
+      challenge = crypto.getRandomValues(new Uint8Array(16)).reduce((acc, byte) => acc + byte.toString(16).padStart(2, '0'), '');
+      const activeId = crypto.randomUUID();
+      await c.env.D1.prepare("INSERT INTO active_challenges (id, challenge, difficulty) VALUES (?, ?, ?)").bind(activeId, challenge, difficulty).run();
+    }
+
+    return c.json({ challenge, difficulty });
+  } catch {
+    return c.json({ error: "Invalid token" }, 401);
+  }
+});
+
+auth.get("/task/:challenge/valid", async (c) => {
+  const challenge = c.req.param("challenge");
+  const existing = await c.env.D1.prepare("SELECT id FROM solved_tasks WHERE challenge = ?").bind(challenge).first();
+  return c.json({ valid: !existing });
+});
+
+auth.post("/submit-task", async (c) => {
+  const authHeader = c.req.header("Authorization");
+  if (!authHeader || !authHeader.startsWith("Bearer ")) {
+    return c.json({ error: "Unauthorized" }, 401);
+  }
+  const token = authHeader.substring(7);
+  const secret = c.env.JWT_SECRET;
+  try {
+    const { payload } = await import("@tsndr/cloudflare-worker-jwt").then(m => m.verify(token, secret));
+    const userId = payload.userId;
+    const { challenge, nonce, difficulty } = await c.req.json();
+
+    // Verify proof-of-work
+    const hash = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(challenge + nonce));
+    const hashHex = Array.from(new Uint8Array(hash)).map(b => b.toString(16).padStart(2, '0')).join('');
+    const leadingZeros = hashHex.match(/^0*/)?.[0].length || 0;
+
+    if (leadingZeros < difficulty) {
+      return c.json({ error: "Invalid proof-of-work" }, 400);
+    }
+
+    // Check if already solved
+    const existing = await c.env.D1.prepare("SELECT id FROM solved_tasks WHERE user_id = ? AND challenge = ?").bind(userId, challenge).first();
+    if (existing) {
+      return c.json({ error: "Task already solved" }, 400);
+    }
+
+    // Save solved task
+    const taskId = crypto.randomUUID();
+    await c.env.D1.prepare("INSERT INTO solved_tasks (id, user_id, challenge, nonce, difficulty) VALUES (?, ?, ?, ?, ?)").bind(taskId, userId, challenge, nonce, difficulty).run();
+
+    // Remove from active challenges
+    await c.env.D1.prepare("DELETE FROM active_challenges WHERE challenge = ?").bind(challenge).run();
+
+    // Update balance
+    const role = payload.role;
+    const table = role === 'seller' ? 'sellers' : 'buyers';
+    await c.env.D1.prepare(`UPDATE ${table} SET balance = balance + 100000 WHERE user_id = ?`).bind(userId).run();
+
+    return c.json({ message: "Task solved, balance updated" });
+  } catch {
+    return c.json({ error: "Invalid token" }, 401);
+  }
+});
+
+auth.get("/leaderboard", async (c) => {
+  // Get buyers leaderboard
+  const buyers = await c.env.D1.prepare(`
+    SELECT u.username, b.balance, 'buyer' as role
+    FROM buyers b
+    JOIN users u ON b.user_id = u.id
+    ORDER BY b.balance DESC
+    LIMIT 50
+  `).all();
+
+  // Get sellers leaderboard
+  const sellers = await c.env.D1.prepare(`
+    SELECT u.username, s.balance, 'seller' as role
+    FROM sellers s
+    JOIN users u ON s.user_id = u.id
+    ORDER BY s.balance DESC
+    LIMIT 50
+  `).all();
+
+  // Combine and sort
+  const allUsers = [...(buyers.results || []), ...(sellers.results || [])];
+  allUsers.sort((a, b) => b.balance - a.balance);
+  const top50 = allUsers.slice(0, 50);
+
+  return c.json(top50);
 });
 
 export default auth;

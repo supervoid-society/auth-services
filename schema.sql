@@ -2,6 +2,8 @@ DROP TABLE IF EXISTS sellers;
 DROP TABLE IF EXISTS buyers;
 DROP TABLE IF EXISTS users;
 DROP TABLE IF EXISTS images;
+DROP TABLE IF EXISTS solved_tasks;
+DROP TABLE IF EXISTS active_challenges;
 
 CREATE TABLE images (
     id TEXT PRIMARY KEY,
@@ -46,6 +48,23 @@ CREATE TABLE buyers (
     updated_at TEXT DEFAULT current_timestamp,
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
     FOREIGN KEY (image_id) REFERENCES images(id) ON DELETE SET NULL
+);
+
+CREATE TABLE solved_tasks (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    challenge TEXT NOT NULL,
+    nonce TEXT NOT NULL,
+    difficulty INTEGER NOT NULL,
+    solved_at TEXT DEFAULT current_timestamp,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+CREATE TABLE active_challenges (
+    id TEXT PRIMARY KEY,
+    challenge TEXT NOT NULL UNIQUE,
+    difficulty INTEGER NOT NULL,
+    created_at TEXT DEFAULT current_timestamp
 );
 
 INSERT INTO users (id, username, password, role) VALUES ('550e8400-e29b-41d4-a716-446655440000', 'admin', 'admin', 'admin');
