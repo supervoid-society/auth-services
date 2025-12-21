@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import { adminMiddleware, authMiddleware } from "../middleware/auth";
+import { saveImage } from "../utils/image";
 
 type Bindings = {
   JWT_SECRET: string;
@@ -37,8 +38,17 @@ buyers.post("/", async (c) => {
 
 buyers.put("/me", authMiddleware, async (c) => {
   const payload = c.get("jwtPayload");
-  const { full_name, address, phone } = await c.req.json();
-  const result = await c.env.D1.prepare("UPDATE buyers SET full_name = ?, address = ?, phone = ?, updated_at = current_timestamp WHERE user_id = ?").bind(full_name, address || null, phone || null, payload.userId).run();
+  const { full_name, address, phone, image_base64, image_content_type } = await c.req.json();
+  
+  let imageId = null;
+  if (image_base64) {
+    imageId = await saveImage(c, image_base64, image_content_type || "image/jpeg");
+    if (!imageId) {
+      return c.json({ error: "Failed to save image" }, 500);
+    }
+  }
+  
+  const result = await c.env.D1.prepare("UPDATE buyers SET full_name = ?, address = ?, phone = ?, image_id = ?, updated_at = current_timestamp WHERE user_id = ?").bind(full_name, address || null, phone || null, imageId, payload.userId).run();
   if (result.meta.changes > 0) return c.json({ message: "Buyer profile updated" });
   return c.json({ error: "Buyer profile not found" }, 404);
 });

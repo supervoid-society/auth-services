@@ -1,15 +1,22 @@
 import { Hono } from "hono";
 import { adminMiddleware, authMiddleware } from "../middleware/auth";
 
+interface JWTPayload {
+  userId: number;
+  username: string;
+  role: string;
+  exp: number;
+}
+
 type Bindings = {
   JWT_SECRET: string;
   D1: D1Database;
 };
 
-const users = new Hono<{ Bindings: Bindings; Variables: { jwtPayload: any } }>();
+const users = new Hono<{ Bindings: Bindings; Variables: { jwtPayload: JWTPayload } }>();
 
 users.get("/", adminMiddleware, async (c) => {
-  const users = await c.env.D1.prepare("SELECT id, username, created_at, updated_at FROM users").all();
+  const users = await c.env.D1.prepare("SELECT id, username, role, created_at, updated_at FROM users").all();
   return c.json(users.results);
 });
 
@@ -18,6 +25,36 @@ users.get("/me", authMiddleware, async (c) => {
   const user = await c.env.D1.prepare("SELECT id, username, role, created_at, updated_at FROM users WHERE id = ?").bind(payload.userId).first();
   if (user) return c.json(user);
   return c.json({ error: "User not found" }, 404);
+});
+
+users.get("/profile-image/:userId", async (c) => {
+  const userId = c.req.param("userId");
+  
+  // First check if user exists
+  const user = await c.env.D1.prepare("SELECT role FROM users WHERE id = ?").bind(userId).first();
+  if (!user) {
+    return c.json({ error: "User not found" }, 404);
+  }
+  
+  let profileImage = null;
+  
+  if (user.role === 'seller') {
+    const seller = await c.env.D1.prepare("SELECT image_id FROM sellers WHERE user_id = ?").bind(userId).first();
+    if (seller && seller.image_id) {
+      profileImage = await c.env.D1.prepare("SELECT * FROM images WHERE id = ?").bind(seller.image_id).first();
+    }
+  } else if (user.role === 'buyer') {
+    const buyer = await c.env.D1.prepare("SELECT image_id FROM buyers WHERE user_id = ?").bind(userId).first();
+    if (buyer && buyer.image_id) {
+      profileImage = await c.env.D1.prepare("SELECT * FROM images WHERE id = ?").bind(buyer.image_id).first();
+    }
+  }
+  
+  if (profileImage) {
+    return c.body(profileImage.data, { headers: { 'Content-Type': profileImage.content_type } });
+  } else {
+    return c.json({ error: "Profile image not found" }, 404);
+  }
 });
 
 users.get("/:id", adminMiddleware, async (c) => {
@@ -48,7 +85,7 @@ users.put("/me", authMiddleware, async (c) => {
       return c.json({ error: "Current password required to change password" }, 400);
     }
     const user = await c.env.D1.prepare("SELECT password FROM users WHERE id = ?").bind(payload.userId).first();
-    if (!user || (user as any).password !== currentPassword) {
+    if (!user || (user as { password: string }).password !== currentPassword) {
       return c.json({ error: "Current password is incorrect" }, 400);
     }
   }
@@ -101,7 +138,7 @@ users.delete("/:id", adminMiddleware, async (c) => {
   }
 
   const userCount = await c.env.D1.prepare("SELECT COUNT(*) as count FROM users").first();
-  if (!userCount || (userCount as any).count <= 1) {
+  if (!userCount || (userCount as { count: number }).count <= 1) {
     return c.json({ error: "Cannot delete the last user" }, 400);
   }
 

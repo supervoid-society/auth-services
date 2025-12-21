@@ -1,4 +1,5 @@
 import { verify } from "@tsndr/cloudflare-worker-jwt";
+import { Context, Next } from "hono";
 
 interface JWTPayload {
   userId: number;
@@ -7,7 +8,7 @@ interface JWTPayload {
   exp: number;
 }
 
-export const authMiddleware = async (c: any, next: any) => {
+export const authMiddleware = async (c: Context, next: Next) => {
   const auth = c.req.header("Authorization");
   if (!auth || !auth.startsWith("Bearer ")) {
     return c.json({ error: "Unauthorized" }, 401);
@@ -26,7 +27,7 @@ export const authMiddleware = async (c: any, next: any) => {
   }
 };
 
-export const adminMiddleware = async (c: any, next: any) => {
+export const adminMiddleware = async (c: Context, next: Next) => {
   const auth = c.req.header("Authorization");
   if (!auth || !auth.startsWith("Bearer ")) {
     return c.json({ error: "Unauthorized" }, 401);
