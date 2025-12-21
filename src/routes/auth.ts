@@ -117,8 +117,10 @@ auth.get("/sellers/me", async (c) => {
   const token = authHeader.substring(7);
   const secret = c.env.JWT_SECRET;
   try {
-    const { payload } = await import("@tsndr/cloudflare-worker-jwt").then(m => m.verify(token, secret));
-    const userId = payload.userId;
+    const data = await import("@tsndr/cloudflare-worker-jwt").then(m => m.verify(token, secret));
+    if (!data) return c.json({ error: "Invalid token" }, 401);
+    const { payload } = data;
+    const userId = (payload as any).userId;
 
     const result = await c.env.D1.prepare("SELECT * FROM sellers WHERE user_id = ?").bind(userId).first();
     if (result) {
@@ -139,8 +141,10 @@ auth.get("/buyers/me", async (c) => {
   const token = authHeader.substring(7);
   const secret = c.env.JWT_SECRET;
   try {
-    const { payload } = await import("@tsndr/cloudflare-worker-jwt").then(m => m.verify(token, secret));
-    const userId = payload.userId;
+    const data = await import("@tsndr/cloudflare-worker-jwt").then(m => m.verify(token, secret));
+    if (!data) return c.json({ error: "Invalid token" }, 401);
+    const { payload } = data;
+    const userId = (payload as any).userId;
 
     const result = await c.env.D1.prepare("SELECT * FROM buyers WHERE user_id = ?").bind(userId).first();
     if (result) {
@@ -151,26 +155,6 @@ auth.get("/buyers/me", async (c) => {
   } catch {
     return c.json({ error: "Invalid token" }, 401);
   }
-});
-
-auth.get("/leaderboard", async (c) => {
-  const buyers = await c.env.D1.prepare(`
-    SELECT u.username, b.balance, 'buyer' as role
-    FROM users u
-    JOIN buyers b ON u.id = b.user_id
-  `).all();
-
-  const sellers = await c.env.D1.prepare(`
-    SELECT u.username, s.balance, 'seller' as role
-    FROM users u
-    JOIN sellers s ON u.id = s.user_id
-  `).all();
-
-  const leaderboard = [...(buyers.results || []), ...(sellers.results || [])]
-    .sort((a, b) => b.balance - a.balance)
-    .slice(0, 50); // Top 50
-
-  return c.json(leaderboard);
 });
 
 auth.post("/transfer", async (c) => {
@@ -191,6 +175,32 @@ auth.post("/transfer", async (c) => {
   return c.json({ message: "Transfer successful" });
 });
 
+auth.get("/solved-history", async (c) => {
+  const authHeader = c.req.header("Authorization");
+  if (!authHeader || !authHeader.startsWith("Bearer ")) {
+    return c.json({ error: "Unauthorized" }, 401);
+  }
+  const token = authHeader.substring(7);
+  const secret = c.env.JWT_SECRET;
+  try {
+    const data = await import("@tsndr/cloudflare-worker-jwt").then(m => m.verify(token, secret));
+    if (!data) return c.json({ error: "Invalid token" }, 401);
+    const { payload } = data;
+    const userId = (payload as any).userId;
+
+    const history = await c.env.D1.prepare("SELECT nonce, solved_at FROM solved_tasks WHERE user_id = ? ORDER BY solved_at DESC LIMIT 50").bind(userId).all();
+    return c.json(history.results);
+  } catch {
+    return c.json({ error: "Invalid token" }, 401);
+  }
+});
+
+auth.get("/task/:challenge/valid", async (c) => {
+  const challenge = c.req.param("challenge");
+  const existing = await c.env.D1.prepare("SELECT id FROM solved_tasks WHERE challenge = ?").bind(challenge).first();
+  return c.json({ valid: !existing });
+});
+
 auth.get("/task", async (c) => {
   const authHeader = c.req.header("Authorization");
   if (!authHeader || !authHeader.startsWith("Bearer ")) {
@@ -199,12 +209,12 @@ auth.get("/task", async (c) => {
   const token = authHeader.substring(7);
   const secret = c.env.JWT_SECRET;
   try {
-    const { payload } = await import("@tsndr/cloudflare-worker-jwt").then(m => m.verify(token, secret));
-    const userId = payload.userId;
+    const data = await import("@tsndr/cloudflare-worker-jwt").then(m => m.verify(token, secret));
+    if (!data) return c.json({ error: "Invalid token" }, 401);
+    const { payload } = data;
+    const userId = (payload as any).userId;
 
-    // Get total solved tasks globally for difficulty
-    const totalSolved = await c.env.D1.prepare("SELECT COUNT(*) as count FROM solved_tasks").first();
-    const difficulty = Math.min(24, Math.max(6, 6 + Math.floor((totalSolved.count as number) / 100))); // Start at 6, increase slowly
+    let difficulty = 6; // Fixed difficulty
 
     // Check if there's an active challenge
     let activeChallenge = await c.env.D1.prepare("SELECT challenge FROM active_challenges LIMIT 1").first();
@@ -224,12 +234,6 @@ auth.get("/task", async (c) => {
   }
 });
 
-auth.get("/task/:challenge/valid", async (c) => {
-  const challenge = c.req.param("challenge");
-  const existing = await c.env.D1.prepare("SELECT id FROM solved_tasks WHERE challenge = ?").bind(challenge).first();
-  return c.json({ valid: !existing });
-});
-
 auth.post("/submit-task", async (c) => {
   const authHeader = c.req.header("Authorization");
   if (!authHeader || !authHeader.startsWith("Bearer ")) {
@@ -238,8 +242,10 @@ auth.post("/submit-task", async (c) => {
   const token = authHeader.substring(7);
   const secret = c.env.JWT_SECRET;
   try {
-    const { payload } = await import("@tsndr/cloudflare-worker-jwt").then(m => m.verify(token, secret));
-    const userId = payload.userId;
+    const jwtData = await import("@tsndr/cloudflare-worker-jwt").then(m => m.verify(token, secret));
+    if (!jwtData) return c.json({ error: "Invalid token" }, 401);
+    const { payload } = jwtData;
+    const userId = (payload as any).userId;
     const { challenge, nonce, difficulty } = await c.req.json();
 
     // Verify proof-of-work
@@ -253,8 +259,8 @@ auth.post("/submit-task", async (c) => {
     const challengeBytes = hexToBytes(challenge);
     const nonceHex = nonce;
     const nonceBytes = hexToBytes(nonceHex.length % 2 === 0 ? nonceHex : '0' + nonceHex);
-    const data = new Uint8Array([...challengeBytes, ...nonceBytes]);
-    const hash = await crypto.subtle.digest("SHA-256", data);
+    const combinedData = new Uint8Array([...challengeBytes, ...nonceBytes]);
+    const hash = await crypto.subtle.digest("SHA-256", combinedData);
     const hashHex = Array.from(new Uint8Array(hash)).map(b => b.toString(16).padStart(2, '0')).join('');
     const leadingZeros = hashHex.match(/^0*/)?.[0].length || 0;
 
@@ -276,7 +282,7 @@ auth.post("/submit-task", async (c) => {
     await c.env.D1.prepare("DELETE FROM active_challenges WHERE challenge = ?").bind(challenge).run();
 
     // Update balance
-    const role = payload.role;
+    const role = (payload as any).role;
     const table = role === 'seller' ? 'sellers' : 'buyers';
     await c.env.D1.prepare(`UPDATE ${table} SET balance = balance + 100000 WHERE user_id = ?`).bind(userId).run();
 
@@ -287,30 +293,19 @@ auth.post("/submit-task", async (c) => {
 });
 
 auth.get("/leaderboard", async (c) => {
-  // Get buyers leaderboard
-  const buyers = await c.env.D1.prepare(`
+  const leaderboard = await c.env.D1.prepare(`
     SELECT u.username, b.balance, 'buyer' as role
     FROM buyers b
     JOIN users u ON b.user_id = u.id
-    ORDER BY b.balance DESC
-    LIMIT 50
-  `).all();
-
-  // Get sellers leaderboard
-  const sellers = await c.env.D1.prepare(`
+    UNION ALL
     SELECT u.username, s.balance, 'seller' as role
     FROM sellers s
     JOIN users u ON s.user_id = u.id
-    ORDER BY s.balance DESC
+    ORDER BY balance DESC
     LIMIT 50
   `).all();
 
-  // Combine and sort
-  const allUsers = [...(buyers.results || []), ...(sellers.results || [])];
-  allUsers.sort((a, b) => b.balance - a.balance);
-  const top50 = allUsers.slice(0, 50);
-
-  return c.json(top50);
+  return c.json(leaderboard.results);
 });
 
 export default auth;
