@@ -27,6 +27,13 @@ users.get("/me", authMiddleware, async (c) => {
   return c.json({ error: "User not found" }, 404);
 });
 
+users.get("/:id", async (c) => {
+  const userId = c.req.param("id");
+  const user = await c.env.D1.prepare("SELECT id, username, role, created_at, updated_at FROM users WHERE id = ?").bind(userId).first();
+  if (user) return c.json(user);
+  return c.json({ error: "User not found" }, 404);
+});
+
 users.get("/profile-image/:userId", async (c) => {
   const userId = c.req.param("userId");
   
@@ -51,7 +58,23 @@ users.get("/profile-image/:userId", async (c) => {
   }
   
   if (profileImage) {
-    return c.newResponse(profileImage.data as any, { headers: { 'Content-Type': profileImage.content_type as string } });
+    const { data, content_type } = profileImage as { data: any; content_type: string };
+    let binaryData: Uint8Array;
+    if (typeof data === 'string') {
+      // Assume base64
+      try {
+        binaryData = Uint8Array.from(atob(data), c => c.charCodeAt(0));
+      } catch (e) {
+        console.error("Invalid base64 data:", e);
+        return new Response("Invalid image data", { status: 500 });
+      }
+    } else if (data instanceof Uint8Array) {
+      binaryData = data;
+    } else {
+      console.error("Unsupported data type:", typeof data);
+      return new Response("Unsupported image data type", { status: 500 });
+    }
+    return new Response(binaryData, { headers: { 'Content-Type': content_type } });
   } else {
     return c.json({ error: "Profile image not found" }, 404);
   }
