@@ -51,7 +51,7 @@ users.get("/profile-image/:userId", async (c) => {
   }
   
   if (profileImage) {
-    return c.body(profileImage.data, { headers: { 'Content-Type': profileImage.content_type } });
+    return c.newResponse(profileImage.data as any, { headers: { 'Content-Type': profileImage.content_type as string } });
   } else {
     return c.json({ error: "Profile image not found" }, 404);
   }
