@@ -2,7 +2,7 @@ import { verify } from "@tsndr/cloudflare-worker-jwt";
 import { Context, Next } from "hono";
 
 interface JWTPayload {
-  userId: number;
+  userId: string;
   username: string;
   role: string;
   exp: number;

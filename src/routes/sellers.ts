@@ -39,8 +39,9 @@ sellers.post("/", async (c) => {
   const { user_id, store_name, description, contact_phone } = await c.req.json();
   const existing = await c.env.D1.prepare("SELECT id FROM sellers WHERE user_id = ?").bind(user_id).first();
   if (existing) return c.json({ error: "Seller already exists for this user" }, 400);
-  const result = await c.env.D1.prepare("INSERT INTO sellers (user_id, store_name, description, contact_phone) VALUES (?, ?, ?, ?)").bind(user_id, store_name, description || null, contact_phone || null).run();
-  return c.json({ id: result.meta.last_row_id });
+  const sellerId = crypto.randomUUID();
+  await c.env.D1.prepare("INSERT INTO sellers (id, user_id, store_name, description, contact_phone) VALUES (?, ?, ?, ?, ?)").bind(sellerId, user_id, store_name, description || null, contact_phone || null).run();
+  return c.json({ id: sellerId });
 });
 
 sellers.put("/me", authMiddleware, async (c) => {

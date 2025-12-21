@@ -32,8 +32,9 @@ buyers.post("/", async (c) => {
   const { user_id, full_name, address, phone } = await c.req.json();
   const existing = await c.env.D1.prepare("SELECT id FROM buyers WHERE user_id = ?").bind(user_id).first();
   if (existing) return c.json({ error: "Buyer already exists for this user" }, 400);
-  const result = await c.env.D1.prepare("INSERT INTO buyers (user_id, full_name, address, phone) VALUES (?, ?, ?, ?)").bind(user_id, full_name, address || null, phone || null).run();
-  return c.json({ id: result.meta.last_row_id });
+  const buyerId = crypto.randomUUID();
+  await c.env.D1.prepare("INSERT INTO buyers (id, user_id, full_name, address, phone) VALUES (?, ?, ?, ?, ?)").bind(buyerId, user_id, full_name, address || null, phone || null).run();
+  return c.json({ id: buyerId });
 });
 
 buyers.put("/me", authMiddleware, async (c) => {

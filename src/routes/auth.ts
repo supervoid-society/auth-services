@@ -36,11 +36,12 @@ auth.post("/users", async (c) => {
   }
 
   try {
-    const result = await c.env.D1.prepare(
-      "INSERT INTO users (username, password, role) VALUES (?, ?, ?)"
-    ).bind(username, password, role).run();
+    const userId = crypto.randomUUID();
+    await c.env.D1.prepare(
+      "INSERT INTO users (id, username, password, role) VALUES (?, ?, ?, ?)"
+    ).bind(userId, username, password, role).run();
 
-    return c.json({ id: result.meta.last_row_id });
+    return c.json({ id: userId });
   } catch {
     return c.json({ error: "Failed to create user" }, 500);
   }
@@ -54,11 +55,12 @@ auth.post("/buyers", async (c) => {
   }
 
   try {
-    const result = await c.env.D1.prepare(
-      "INSERT INTO buyers (user_id, full_name, address, phone) VALUES (?, ?, ?, ?)"
-    ).bind(user_id, full_name, address || null, phone || null).run();
+    const buyerId = crypto.randomUUID();
+    await c.env.D1.prepare(
+      "INSERT INTO buyers (id, user_id, full_name, address, phone) VALUES (?, ?, ?, ?, ?)"
+    ).bind(buyerId, user_id, full_name, address || null, phone || null).run();
 
-    return c.json({ id: result.meta.last_row_id });
+    return c.json({ id: buyerId });
   } catch {
     return c.json({ error: "Failed to create buyer" }, 500);
   }
@@ -72,11 +74,12 @@ auth.post("/sellers", async (c) => {
   }
 
   try {
-    const result = await c.env.D1.prepare(
-      "INSERT INTO sellers (user_id, store_name, description, contact_phone) VALUES (?, ?, ?, ?)"
-    ).bind(user_id, store_name, description || null, contact_phone || null).run();
+    const sellerId = crypto.randomUUID();
+    await c.env.D1.prepare(
+      "INSERT INTO sellers (id, user_id, store_name, description, contact_phone) VALUES (?, ?, ?, ?, ?)"
+    ).bind(sellerId, user_id, store_name, description || null, contact_phone || null).run();
 
-    return c.json({ id: result.meta.last_row_id });
+    return c.json({ id: sellerId });
   } catch {
     return c.json({ error: "Failed to create seller" }, 500);
   }

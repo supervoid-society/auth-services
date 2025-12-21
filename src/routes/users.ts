@@ -58,7 +58,7 @@ users.get("/profile-image/:userId", async (c) => {
   }
   
   if (profileImage) {
-    const { data, content_type } = profileImage as { data: any; content_type: string };
+    const { data, content_type } = profileImage as { data: Uint8Array; content_type: string };
     let binaryData: Uint8Array;
     if (typeof data === 'string') {
       // Assume base64
@@ -94,8 +94,9 @@ users.post("/", async (c) => {
   }
   const existing = await c.env.D1.prepare("SELECT id FROM users WHERE username = ?").bind(username).first();
   if (existing) return c.json({ error: "Username already exists" }, 400);
-  const result = await c.env.D1.prepare("INSERT INTO users (username, password, role) VALUES (?, ?, ?)").bind(username, password, role).run();
-  return c.json({ id: result.meta.last_row_id });
+  const userId = crypto.randomUUID();
+  await c.env.D1.prepare("INSERT INTO users (id, username, password, role) VALUES (?, ?, ?, ?)").bind(userId, username, password, role).run();
+  return c.json({ id: userId });
 });
 
 users.put("/me", authMiddleware, async (c) => {

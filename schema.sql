@@ -12,7 +12,7 @@ CREATE TABLE images (
 );
 
 CREATE TABLE users (
-    id INTEGER PRIMARY KEY,
+    id TEXT PRIMARY KEY,
     username TEXT NOT NULL UNIQUE,
     password TEXT NOT NULL,
     role TEXT NOT NULL CHECK (role IN ('admin', 'seller', 'buyer')),
@@ -21,8 +21,8 @@ CREATE TABLE users (
 );
 
 CREATE TABLE sellers (
-    id INTEGER PRIMARY KEY,
-    user_id INTEGER NOT NULL UNIQUE,
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL UNIQUE,
     store_name TEXT NOT NULL,
     description TEXT,
     contact_phone TEXT,
@@ -35,8 +35,8 @@ CREATE TABLE sellers (
 );
 
 CREATE TABLE buyers (
-    id INTEGER PRIMARY KEY,
-    user_id INTEGER NOT NULL UNIQUE,
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL UNIQUE,
     full_name TEXT NOT NULL,
     address TEXT,
     phone TEXT,
@@ -48,4 +48,4 @@ CREATE TABLE buyers (
     FOREIGN KEY (image_id) REFERENCES images(id) ON DELETE SET NULL
 );
 
-INSERT INTO users (username, password, role) VALUES ('admin', 'admin', 'admin');
+INSERT INTO users (id, username, password, role) VALUES ('550e8400-e29b-41d4-a716-446655440000', 'admin', 'admin', 'admin');
