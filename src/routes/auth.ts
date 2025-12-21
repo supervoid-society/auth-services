@@ -204,7 +204,7 @@ auth.get("/task", async (c) => {
 
     // Get total solved tasks globally for difficulty
     const totalSolved = await c.env.D1.prepare("SELECT COUNT(*) as count FROM solved_tasks").first();
-    const difficulty = 24; // Keep difficulty constant
+    const difficulty = Math.min(24, Math.max(6, 6 + Math.floor((totalSolved.count as number) / 100))); // Start at 6, increase slowly
 
     // Check if there's an active challenge
     let activeChallenge = await c.env.D1.prepare("SELECT challenge FROM active_challenges LIMIT 1").first();
@@ -243,7 +243,18 @@ auth.post("/submit-task", async (c) => {
     const { challenge, nonce, difficulty } = await c.req.json();
 
     // Verify proof-of-work
-    const hash = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(challenge + nonce));
+    function hexToBytes(hex: string): Uint8Array {
+      const bytes = [];
+      for (let i = 0; i < hex.length; i += 2) {
+        bytes.push(parseInt(hex.substr(i, 2), 16));
+      }
+      return new Uint8Array(bytes);
+    }
+    const challengeBytes = hexToBytes(challenge);
+    const nonceHex = nonce;
+    const nonceBytes = hexToBytes(nonceHex.length % 2 === 0 ? nonceHex : '0' + nonceHex);
+    const data = new Uint8Array([...challengeBytes, ...nonceBytes]);
+    const hash = await crypto.subtle.digest("SHA-256", data);
     const hashHex = Array.from(new Uint8Array(hash)).map(b => b.toString(16).padStart(2, '0')).join('');
     const leadingZeros = hashHex.match(/^0*/)?.[0].length || 0;
 
