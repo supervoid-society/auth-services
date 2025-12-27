@@ -10,7 +10,8 @@
 		{
 			"binding": "D1",
 			"database_name": "auth-services",
-			"database_id": "06950e4e-ce84-4c28-b978-dd1e3758cb2c"
+			"database_id": "06950e4e-ce84-4c28-b978-dd1e3758cb2c",
+			"remote": true
 		}
 	]
 }
