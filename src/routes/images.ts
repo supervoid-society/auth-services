@@ -25,6 +25,15 @@ images.get("/:id", async (c) => {
     }
   } else if (data instanceof Uint8Array) {
     binaryData = data;
+  } else if (data && typeof data === 'object') {
+    // Universal conversion for object-like binary data (Buffer, Uint8Array from different context, etc.)
+    const values = Object.values(data);
+    if (values.every(v => typeof v === 'number')) {
+      binaryData = new Uint8Array(values as number[]);
+    } else {
+      console.error("Object data is not numeric:", typeof data);
+      return new Response("Invalid image data format", { status: 500 });
+    }
   } else {
     console.error("Unsupported data type:", typeof data);
     return new Response("Unsupported image data type", { status: 500 });

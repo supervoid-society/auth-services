@@ -29,8 +29,27 @@ users.get("/me", authMiddleware, async (c) => {
 
 users.get("/:id", async (c) => {
   const userId = c.req.param("id");
-  const user = await c.env.D1.prepare("SELECT id, username, role, created_at, updated_at FROM users WHERE id = ?").bind(userId).first();
-  if (user) return c.json(user);
+  const user = (await c.env.D1.prepare(
+    "SELECT id, username, role, created_at, updated_at FROM users WHERE id = ?"
+  )
+    .bind(userId)
+    .first()) as { id: string; username: string; role: string } | undefined;
+
+  if (user) {
+    let displayName = user.username;
+    if (user.role === "buyer") {
+      const buyer = (await c.env.D1.prepare("SELECT full_name FROM buyers WHERE user_id = ?")
+        .bind(userId)
+        .first()) as { full_name: string } | undefined;
+      if (buyer) displayName = buyer.full_name;
+    } else if (user.role === "seller") {
+      const seller = (await c.env.D1.prepare("SELECT store_name FROM sellers WHERE user_id = ?")
+        .bind(userId)
+        .first()) as { store_name: string } | undefined;
+      if (seller) displayName = seller.store_name;
+    }
+    return c.json({ ...user, display_name: displayName });
+  }
   return c.json({ error: "User not found" }, 404);
 });
 
@@ -58,8 +77,9 @@ users.get("/profile-image/:userId", async (c) => {
   }
   
   if (profileImage) {
-    const { data, content_type } = profileImage as { data: Uint8Array; content_type: string };
+    const { data, content_type } = profileImage as { data: any; content_type: string };
     let binaryData: Uint8Array;
+    
     if (typeof data === 'string') {
       // Assume base64
       try {
@@ -68,8 +88,13 @@ users.get("/profile-image/:userId", async (c) => {
         console.error("Invalid base64 data:", e);
         return new Response("Invalid image data", { status: 500 });
       }
+    } else if (data instanceof ArrayBuffer) {
+      binaryData = new Uint8Array(data);
     } else if (data instanceof Uint8Array) {
       binaryData = data;
+    } else if (data && typeof data === 'object' && !Array.isArray(data)) {
+      // Handle cases where it might be a Buffer-like object with numeric keys
+      binaryData = new Uint8Array(Object.values(data));
     } else {
       console.error("Unsupported data type:", typeof data);
       return new Response("Unsupported image data type", { status: 500 });

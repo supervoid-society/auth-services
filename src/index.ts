@@ -6,6 +6,7 @@ import sellerRoutes from "./routes/sellers";
 import buyerRoutes from "./routes/buyers";
 import imageRoutes from "./routes/images";
 import transactionRoutes from "./routes/transactions";
+import walletRoutes from "./routes/wallets";
 
 interface JWTPayload {
   userId: string;
@@ -33,5 +34,6 @@ app.route("/sellers", sellerRoutes);
 app.route("/buyers", buyerRoutes);
 app.route("/images", imageRoutes);
 app.route("/transactions", transactionRoutes);
+app.route("/wallets", walletRoutes);
 
 export default app;

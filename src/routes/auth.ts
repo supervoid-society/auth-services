@@ -151,79 +151,13 @@ auth.post("/transfer", async (c) => {
   return c.json({ message: "Transfer successful" });
 });
 
-auth.get("/solved-history", authMiddleware, async (c) => {
-  const payload = c.get("jwtPayload");
-  const history = await c.env.D1.prepare("SELECT nonce, solved_at FROM solved_tasks WHERE user_id = ? ORDER BY solved_at DESC LIMIT 50").bind(payload.userId).all();
-  return c.json(history.results);
-});
-
-auth.get("/task/:challenge/valid", async (c) => {
-  const challenge = c.req.param("challenge");
-  const existing = await c.env.D1.prepare("SELECT id FROM solved_tasks WHERE challenge = ?").bind(challenge).first();
-  return c.json({ valid: !existing });
-});
-
-auth.get("/task", authMiddleware, async (c) => {
-  let difficulty = 6; // Fixed difficulty
-
-  let activeChallenge = await c.env.D1.prepare("SELECT challenge FROM active_challenges LIMIT 1").first() as { challenge: string } | undefined;
-  let challenge;
-  if (activeChallenge) {
-    challenge = activeChallenge.challenge;
-  } else {
-    challenge = crypto.getRandomValues(new Uint8Array(16)).reduce((acc, byte) => acc + byte.toString(16).padStart(2, '0'), '');
-    const activeId = crypto.randomUUID();
-    await c.env.D1.prepare("INSERT INTO active_challenges (id, challenge, difficulty) VALUES (?, ?, ?)").bind(activeId, challenge, difficulty).run();
-  }
-
-  return c.json({ challenge, difficulty });
-});
-
-auth.post("/submit-task", authMiddleware, async (c) => {
-  const payload = c.get("jwtPayload");
-  const { challenge, nonce, difficulty } = await c.req.json();
-
-  function hexToBytes(hex: string): Uint8Array {
-    const bytes = [];
-    for (let i = 0; i < hex.length; i += 2) {
-      bytes.push(parseInt(hex.substr(i, 2), 16));
-    }
-    return new Uint8Array(bytes);
-  }
-
-  const challengeBytes = hexToBytes(challenge);
-  const nonceBytes = hexToBytes(nonce.length % 2 === 0 ? nonce : '0' + nonce);
-  const combinedData = new Uint8Array([...challengeBytes, ...nonceBytes]);
-  const hash = await crypto.subtle.digest("SHA-256", combinedData);
-  const hashHex = Array.from(new Uint8Array(hash)).map(b => b.toString(16).padStart(2, '0')).join('');
-  const leadingZeros = hashHex.match(/^0*/)?.[0].length || 0;
-
-  if (leadingZeros < difficulty) {
-    return c.json({ error: "Invalid proof-of-work" }, 400);
-  }
-
-  const existing = await c.env.D1.prepare("SELECT id FROM solved_tasks WHERE user_id = ? AND challenge = ?").bind(payload.userId, challenge).first();
-  if (existing) {
-    return c.json({ error: "Task already solved" }, 400);
-  }
-
-  const taskId = crypto.randomUUID();
-  await c.env.D1.prepare("INSERT INTO solved_tasks (id, user_id, challenge, nonce, difficulty) VALUES (?, ?, ?, ?, ?)").bind(taskId, payload.userId, challenge, nonce, difficulty).run();
-  await c.env.D1.prepare("DELETE FROM active_challenges WHERE challenge = ?").bind(challenge).run();
-
-  const table = payload.role === 'seller' ? 'sellers' : 'buyers';
-  await c.env.D1.prepare(`UPDATE ${table} SET balance = balance + 100000 WHERE user_id = ?`).bind(payload.userId).run();
-
-  return c.json({ message: "Task solved, balance updated" });
-});
-
 auth.get("/leaderboard", async (c) => {
   const leaderboard = await c.env.D1.prepare(`
-    SELECT u.username, b.balance, 'buyer' as role
+    SELECT u.id as user_id, u.username, b.full_name as display_name, b.balance, 'buyer' as role
     FROM buyers b
     JOIN users u ON b.user_id = u.id
     UNION ALL
-    SELECT u.username, s.balance, 'seller' as role
+    SELECT u.id as user_id, u.username, s.store_name as display_name, s.balance, 'seller' as role
     FROM sellers s
     JOIN users u ON s.user_id = u.id
     ORDER BY balance DESC

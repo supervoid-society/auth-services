@@ -2,8 +2,8 @@ DROP TABLE IF EXISTS sellers;
 DROP TABLE IF EXISTS buyers;
 DROP TABLE IF EXISTS users;
 DROP TABLE IF EXISTS images;
-DROP TABLE IF EXISTS solved_tasks;
-DROP TABLE IF EXISTS active_challenges;
+DROP TABLE IF EXISTS wallet_transfers;
+DROP TABLE IF EXISTS wallet_requests;
 
 CREATE TABLE images (
     id TEXT PRIMARY KEY,
@@ -50,21 +50,26 @@ CREATE TABLE buyers (
     FOREIGN KEY (image_id) REFERENCES images(id) ON DELETE SET NULL
 );
 
-CREATE TABLE solved_tasks (
+CREATE TABLE wallet_transfers (
     id TEXT PRIMARY KEY,
-    user_id TEXT NOT NULL,
-    challenge TEXT NOT NULL,
-    nonce TEXT NOT NULL,
-    difficulty INTEGER NOT NULL,
-    solved_at TEXT DEFAULT current_timestamp,
-    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    sender_id TEXT NOT NULL,
+    receiver_id TEXT NOT NULL,
+    amount DECIMAL(10,2) NOT NULL,
+    created_at TEXT DEFAULT current_timestamp,
+    FOREIGN KEY (sender_id) REFERENCES users(id) ON DELETE CASCADE,
+    FOREIGN KEY (receiver_id) REFERENCES users(id) ON DELETE CASCADE
 );
 
-CREATE TABLE active_challenges (
+CREATE TABLE wallet_requests (
     id TEXT PRIMARY KEY,
-    challenge TEXT NOT NULL UNIQUE,
-    difficulty INTEGER NOT NULL,
-    created_at TEXT DEFAULT current_timestamp
+    requester_id TEXT NOT NULL,
+    target_id TEXT NOT NULL,
+    amount DECIMAL(10,2) NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'accepted', 'rejected')),
+    created_at TEXT DEFAULT current_timestamp,
+    updated_at TEXT DEFAULT current_timestamp,
+    FOREIGN KEY (requester_id) REFERENCES users(id) ON DELETE CASCADE,
+    FOREIGN KEY (target_id) REFERENCES users(id) ON DELETE CASCADE
 );
 
 INSERT INTO users (id, username, password, role) VALUES ('550e8400-e29b-41d4-a716-446655440000', 'admin', 'admin', 'admin');

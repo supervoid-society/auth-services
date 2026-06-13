@@ -10,8 +10,8 @@ DROP TABLE IF EXISTS sellers;
 DROP TABLE IF EXISTS buyers;
 DROP TABLE IF EXISTS users;
 DROP TABLE IF EXISTS images;
-DROP TABLE IF EXISTS solved_tasks;
-DROP TABLE IF EXISTS active_challenges;
+DROP TABLE IF EXISTS wallet_transfers;
+DROP TABLE IF EXISTS wallet_requests;
 
 CREATE TABLE images (
     id TEXT PRIMARY KEY,
@@ -57,6 +57,28 @@ CREATE TABLE buyers (
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
     FOREIGN KEY (image_id) REFERENCES images(id) ON DELETE SET NULL
 );
+
+CREATE TABLE wallet_transfers (
+    id TEXT PRIMARY KEY,
+    sender_id TEXT NOT NULL,
+    receiver_id TEXT NOT NULL,
+    amount DECIMAL(10,2) NOT NULL,
+    created_at TEXT DEFAULT current_timestamp,
+    FOREIGN KEY (sender_id) REFERENCES users(id) ON DELETE CASCADE,
+    FOREIGN KEY (receiver_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+CREATE TABLE wallet_requests (
+    id TEXT PRIMARY KEY,
+    requester_id TEXT NOT NULL,
+    target_id TEXT NOT NULL,
+    amount DECIMAL(10,2) NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'accepted', 'rejected')),
+    created_at TEXT DEFAULT current_timestamp,
+    updated_at TEXT DEFAULT current_timestamp,
+    FOREIGN KEY (requester_id) REFERENCES users(id) ON DELETE CASCADE,
+    FOREIGN KEY (target_id) REFERENCES users(id) ON DELETE CASCADE
+);
 `;
     const queries = schema.split(";").filter(q => q.trim());
     for (const query of queries) {
@@ -82,7 +104,7 @@ CREATE TABLE buyers (
     }, env);
 
     expect(res.status).toBe(200);
-    const data = await res.json();
+    const data: any = await res.json();
     expect(data.id).toBeDefined();
   });
 
@@ -97,7 +119,7 @@ CREATE TABLE buyers (
     }, env);
 
     expect(res.status).toBe(200);
-    const data = await res.json();
+    const data: any = await res.json();
     expect(data.token).toBeDefined();
   });
 
@@ -112,7 +134,7 @@ CREATE TABLE buyers (
     }, env);
 
     expect(res.status).toBe(401);
-    const data = await res.json();
+    const data: any = await res.json();
     expect(data.error).toBe("Invalid credentials");
   });
 });
