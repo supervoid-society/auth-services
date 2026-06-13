@@ -22,6 +22,16 @@ type Bindings = {
 
 const app = new Hono<{ Bindings: Bindings; Variables: { jwtPayload: JWTPayload } }>();
 
+app.use('*', async (c, next) => {
+  if (!c.env.D1) {
+    console.error("PROD ERROR: D1 binding is MISSING!");
+  }
+  if (!c.env.JWT_SECRET || c.env.JWT_SECRET === "your-secret-key-here") {
+    console.error("PROD ERROR: JWT_SECRET is MISSING or default!");
+  }
+  await next();
+});
+
 app.use('*', cors({ origin: '*' }));
 
 app.get("/", (c) => {
