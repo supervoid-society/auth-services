@@ -2,7 +2,7 @@ import { Hono } from "hono";
 import { adminMiddleware, authMiddleware } from "../middleware/auth";
 
 interface JWTPayload {
-  userId: number;
+  userId: string;
   username: string;
   role: string;
   exp: number;
@@ -80,13 +80,6 @@ users.get("/profile-image/:userId", async (c) => {
   }
 });
 
-users.get("/:id", adminMiddleware, async (c) => {
-  const id = c.req.param("id");
-  const user = await c.env.D1.prepare("SELECT id, username, created_at, updated_at FROM users WHERE id = ?").bind(id).first();
-  if (user) return c.json(user);
-  return c.json({ error: "User not found" }, 404);
-});
-
 users.post("/", async (c) => {
   const { username, password, role } = await c.req.json();
   if (!role || !['admin', 'seller', 'buyer'].includes(role)) {
@@ -157,12 +150,13 @@ users.delete("/:id", adminMiddleware, async (c) => {
   const id = c.req.param("id");
   const jwtPayload = c.get("jwtPayload");
 
-  if (parseInt(id) === jwtPayload.userId) {
+  if (id === jwtPayload.userId) {
     return c.json({ error: "Cannot delete your own account" }, 400);
   }
 
-  const userCount = await c.env.D1.prepare("SELECT COUNT(*) as count FROM users").first();
-  if (!userCount || (userCount as { count: number }).count <= 1) {
+  const userCountResult = await c.env.D1.prepare("SELECT COUNT(*) as count FROM users").first();
+  const userCount = (userCountResult as { count: number }).count;
+  if (userCount <= 1) {
     return c.json({ error: "Cannot delete the last user" }, 400);
   }
 
@@ -170,5 +164,6 @@ users.delete("/:id", adminMiddleware, async (c) => {
   if (result.meta.changes > 0) return c.json({ message: "User deleted" });
   return c.json({ error: "User not found" }, 404);
 });
+
 
 export default users;

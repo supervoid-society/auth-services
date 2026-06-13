@@ -1,17 +1,25 @@
 import { Hono } from "hono";
 import { sign } from "@tsndr/cloudflare-worker-jwt";
+import { authMiddleware } from "../middleware/auth";
 
 type Bindings = {
   JWT_SECRET: string;
   D1: D1Database;
 };
 
-const auth = new Hono<{ Bindings: Bindings }>();
+interface JWTPayload {
+  userId: string;
+  username: string;
+  role: string;
+  exp: number;
+}
+
+const auth = new Hono<{ Bindings: Bindings; Variables: { jwtPayload: JWTPayload } }>();
 
 auth.post("/login", async (c) => {
   const { username, password } = await c.req.json();
 
-  const user = await c.env.D1.prepare("SELECT * FROM users WHERE username = ? AND password = ?").bind(username, password).first();
+  const user = await c.env.D1.prepare("SELECT * FROM users WHERE username = ? AND password = ?").bind(username, password).first() as { id: string, username: string, role: string } | undefined;
 
   if (user) {
     const secret = c.env.JWT_SECRET;
@@ -100,7 +108,7 @@ auth.get("/balance/:userId/:role", async (c) => {
   const role = c.req.param("role"); // 'buyer' or 'seller'
 
   const table = role === 'seller' ? 'sellers' : 'buyers';
-  const result = await c.env.D1.prepare(`SELECT balance FROM ${table} WHERE user_id = ?`).bind(userId).first();
+  const result = await c.env.D1.prepare(`SELECT balance FROM ${table} WHERE user_id = ?`).bind(userId).first() as { balance: number } | undefined;
 
   if (result) {
     return c.json({ balance: result.balance });
@@ -109,90 +117,44 @@ auth.get("/balance/:userId/:role", async (c) => {
   }
 });
 
-auth.get("/sellers/me", async (c) => {
-  const authHeader = c.req.header("Authorization");
-  if (!authHeader || !authHeader.startsWith("Bearer ")) {
-    return c.json({ error: "Unauthorized" }, 401);
-  }
-  const token = authHeader.substring(7);
-  const secret = c.env.JWT_SECRET;
-  try {
-    const data = await import("@tsndr/cloudflare-worker-jwt").then(m => m.verify(token, secret));
-    if (!data) return c.json({ error: "Invalid token" }, 401);
-    const { payload } = data;
-    const userId = (payload as any).userId;
-
-    const result = await c.env.D1.prepare("SELECT * FROM sellers WHERE user_id = ?").bind(userId).first();
-    if (result) {
-      return c.json(result);
-    } else {
-      return c.json({ error: "Seller profile not found" }, 404);
-    }
-  } catch {
-    return c.json({ error: "Invalid token" }, 401);
+auth.get("/sellers/me", authMiddleware, async (c) => {
+  const payload = c.get("jwtPayload");
+  const result = await c.env.D1.prepare("SELECT * FROM sellers WHERE user_id = ?").bind(payload.userId).first();
+  if (result) {
+    return c.json(result);
+  } else {
+    return c.json({ error: "Seller profile not found" }, 404);
   }
 });
 
-auth.get("/buyers/me", async (c) => {
-  const authHeader = c.req.header("Authorization");
-  if (!authHeader || !authHeader.startsWith("Bearer ")) {
-    return c.json({ error: "Unauthorized" }, 401);
-  }
-  const token = authHeader.substring(7);
-  const secret = c.env.JWT_SECRET;
-  try {
-    const data = await import("@tsndr/cloudflare-worker-jwt").then(m => m.verify(token, secret));
-    if (!data) return c.json({ error: "Invalid token" }, 401);
-    const { payload } = data;
-    const userId = (payload as any).userId;
-
-    const result = await c.env.D1.prepare("SELECT * FROM buyers WHERE user_id = ?").bind(userId).first();
-    if (result) {
-      return c.json(result);
-    } else {
-      return c.json({ error: "Buyer profile not found" }, 404);
-    }
-  } catch {
-    return c.json({ error: "Invalid token" }, 401);
+auth.get("/buyers/me", authMiddleware, async (c) => {
+  const payload = c.get("jwtPayload");
+  const result = await c.env.D1.prepare("SELECT * FROM buyers WHERE user_id = ?").bind(payload.userId).first();
+  if (result) {
+    return c.json(result);
+  } else {
+    return c.json({ error: "Buyer profile not found" }, 404);
   }
 });
 
 auth.post("/transfer", async (c) => {
   const { buyerId, sellerId, amount } = await c.req.json();
 
-  // Get buyer balance
-  const buyer = await c.env.D1.prepare("SELECT balance FROM buyers WHERE user_id = ?").bind(buyerId).first();
-  if (!buyer || (buyer as { balance: number }).balance < amount) {
+  const buyer = await c.env.D1.prepare("SELECT balance FROM buyers WHERE user_id = ?").bind(buyerId).first() as { balance: number } | undefined;
+  if (!buyer || buyer.balance < amount) {
     return c.json({ error: "Insufficient balance" }, 400);
   }
 
-  // Deduct from buyer
   await c.env.D1.prepare("UPDATE buyers SET balance = balance - ? WHERE user_id = ?").bind(amount, buyerId).run();
-
-  // Add to seller
   await c.env.D1.prepare("UPDATE sellers SET balance = balance + ? WHERE user_id = ?").bind(amount, sellerId).run();
 
   return c.json({ message: "Transfer successful" });
 });
 
-auth.get("/solved-history", async (c) => {
-  const authHeader = c.req.header("Authorization");
-  if (!authHeader || !authHeader.startsWith("Bearer ")) {
-    return c.json({ error: "Unauthorized" }, 401);
-  }
-  const token = authHeader.substring(7);
-  const secret = c.env.JWT_SECRET;
-  try {
-    const data = await import("@tsndr/cloudflare-worker-jwt").then(m => m.verify(token, secret));
-    if (!data) return c.json({ error: "Invalid token" }, 401);
-    const { payload } = data;
-    const userId = (payload as any).userId;
-
-    const history = await c.env.D1.prepare("SELECT nonce, solved_at FROM solved_tasks WHERE user_id = ? ORDER BY solved_at DESC LIMIT 50").bind(userId).all();
-    return c.json(history.results);
-  } catch {
-    return c.json({ error: "Invalid token" }, 401);
-  }
+auth.get("/solved-history", authMiddleware, async (c) => {
+  const payload = c.get("jwtPayload");
+  const history = await c.env.D1.prepare("SELECT nonce, solved_at FROM solved_tasks WHERE user_id = ? ORDER BY solved_at DESC LIMIT 50").bind(payload.userId).all();
+  return c.json(history.results);
 });
 
 auth.get("/task/:challenge/valid", async (c) => {
@@ -201,95 +163,58 @@ auth.get("/task/:challenge/valid", async (c) => {
   return c.json({ valid: !existing });
 });
 
-auth.get("/task", async (c) => {
-  const authHeader = c.req.header("Authorization");
-  if (!authHeader || !authHeader.startsWith("Bearer ")) {
-    return c.json({ error: "Unauthorized" }, 401);
+auth.get("/task", authMiddleware, async (c) => {
+  let difficulty = 6; // Fixed difficulty
+
+  let activeChallenge = await c.env.D1.prepare("SELECT challenge FROM active_challenges LIMIT 1").first() as { challenge: string } | undefined;
+  let challenge;
+  if (activeChallenge) {
+    challenge = activeChallenge.challenge;
+  } else {
+    challenge = crypto.getRandomValues(new Uint8Array(16)).reduce((acc, byte) => acc + byte.toString(16).padStart(2, '0'), '');
+    const activeId = crypto.randomUUID();
+    await c.env.D1.prepare("INSERT INTO active_challenges (id, challenge, difficulty) VALUES (?, ?, ?)").bind(activeId, challenge, difficulty).run();
   }
-  const token = authHeader.substring(7);
-  const secret = c.env.JWT_SECRET;
-  try {
-    const data = await import("@tsndr/cloudflare-worker-jwt").then(m => m.verify(token, secret));
-    if (!data) return c.json({ error: "Invalid token" }, 401);
-    const { payload } = data;
-    const userId = (payload as any).userId;
 
-    let difficulty = 6; // Fixed difficulty
-
-    // Check if there's an active challenge
-    let activeChallenge = await c.env.D1.prepare("SELECT challenge FROM active_challenges LIMIT 1").first();
-    let challenge;
-    if (activeChallenge) {
-      challenge = activeChallenge.challenge;
-    } else {
-      // Generate new challenge and save to active
-      challenge = crypto.getRandomValues(new Uint8Array(16)).reduce((acc, byte) => acc + byte.toString(16).padStart(2, '0'), '');
-      const activeId = crypto.randomUUID();
-      await c.env.D1.prepare("INSERT INTO active_challenges (id, challenge, difficulty) VALUES (?, ?, ?)").bind(activeId, challenge, difficulty).run();
-    }
-
-    return c.json({ challenge, difficulty });
-  } catch {
-    return c.json({ error: "Invalid token" }, 401);
-  }
+  return c.json({ challenge, difficulty });
 });
 
-auth.post("/submit-task", async (c) => {
-  const authHeader = c.req.header("Authorization");
-  if (!authHeader || !authHeader.startsWith("Bearer ")) {
-    return c.json({ error: "Unauthorized" }, 401);
+auth.post("/submit-task", authMiddleware, async (c) => {
+  const payload = c.get("jwtPayload");
+  const { challenge, nonce, difficulty } = await c.req.json();
+
+  function hexToBytes(hex: string): Uint8Array {
+    const bytes = [];
+    for (let i = 0; i < hex.length; i += 2) {
+      bytes.push(parseInt(hex.substr(i, 2), 16));
+    }
+    return new Uint8Array(bytes);
   }
-  const token = authHeader.substring(7);
-  const secret = c.env.JWT_SECRET;
-  try {
-    const jwtData = await import("@tsndr/cloudflare-worker-jwt").then(m => m.verify(token, secret));
-    if (!jwtData) return c.json({ error: "Invalid token" }, 401);
-    const { payload } = jwtData;
-    const userId = (payload as any).userId;
-    const { challenge, nonce, difficulty } = await c.req.json();
 
-    // Verify proof-of-work
-    function hexToBytes(hex: string): Uint8Array {
-      const bytes = [];
-      for (let i = 0; i < hex.length; i += 2) {
-        bytes.push(parseInt(hex.substr(i, 2), 16));
-      }
-      return new Uint8Array(bytes);
-    }
-    const challengeBytes = hexToBytes(challenge);
-    const nonceHex = nonce;
-    const nonceBytes = hexToBytes(nonceHex.length % 2 === 0 ? nonceHex : '0' + nonceHex);
-    const combinedData = new Uint8Array([...challengeBytes, ...nonceBytes]);
-    const hash = await crypto.subtle.digest("SHA-256", combinedData);
-    const hashHex = Array.from(new Uint8Array(hash)).map(b => b.toString(16).padStart(2, '0')).join('');
-    const leadingZeros = hashHex.match(/^0*/)?.[0].length || 0;
+  const challengeBytes = hexToBytes(challenge);
+  const nonceBytes = hexToBytes(nonce.length % 2 === 0 ? nonce : '0' + nonce);
+  const combinedData = new Uint8Array([...challengeBytes, ...nonceBytes]);
+  const hash = await crypto.subtle.digest("SHA-256", combinedData);
+  const hashHex = Array.from(new Uint8Array(hash)).map(b => b.toString(16).padStart(2, '0')).join('');
+  const leadingZeros = hashHex.match(/^0*/)?.[0].length || 0;
 
-    if (leadingZeros < difficulty) {
-      return c.json({ error: "Invalid proof-of-work" }, 400);
-    }
-
-    // Check if already solved
-    const existing = await c.env.D1.prepare("SELECT id FROM solved_tasks WHERE user_id = ? AND challenge = ?").bind(userId, challenge).first();
-    if (existing) {
-      return c.json({ error: "Task already solved" }, 400);
-    }
-
-    // Save solved task
-    const taskId = crypto.randomUUID();
-    await c.env.D1.prepare("INSERT INTO solved_tasks (id, user_id, challenge, nonce, difficulty) VALUES (?, ?, ?, ?, ?)").bind(taskId, userId, challenge, nonce, difficulty).run();
-
-    // Remove from active challenges
-    await c.env.D1.prepare("DELETE FROM active_challenges WHERE challenge = ?").bind(challenge).run();
-
-    // Update balance
-    const role = (payload as any).role;
-    const table = role === 'seller' ? 'sellers' : 'buyers';
-    await c.env.D1.prepare(`UPDATE ${table} SET balance = balance + 100000 WHERE user_id = ?`).bind(userId).run();
-
-    return c.json({ message: "Task solved, balance updated" });
-  } catch {
-    return c.json({ error: "Invalid token" }, 401);
+  if (leadingZeros < difficulty) {
+    return c.json({ error: "Invalid proof-of-work" }, 400);
   }
+
+  const existing = await c.env.D1.prepare("SELECT id FROM solved_tasks WHERE user_id = ? AND challenge = ?").bind(payload.userId, challenge).first();
+  if (existing) {
+    return c.json({ error: "Task already solved" }, 400);
+  }
+
+  const taskId = crypto.randomUUID();
+  await c.env.D1.prepare("INSERT INTO solved_tasks (id, user_id, challenge, nonce, difficulty) VALUES (?, ?, ?, ?, ?)").bind(taskId, payload.userId, challenge, nonce, difficulty).run();
+  await c.env.D1.prepare("DELETE FROM active_challenges WHERE challenge = ?").bind(challenge).run();
+
+  const table = payload.role === 'seller' ? 'sellers' : 'buyers';
+  await c.env.D1.prepare(`UPDATE ${table} SET balance = balance + 100000 WHERE user_id = ?`).bind(payload.userId).run();
+
+  return c.json({ message: "Task solved, balance updated" });
 });
 
 auth.get("/leaderboard", async (c) => {
@@ -307,5 +232,6 @@ auth.get("/leaderboard", async (c) => {
 
   return c.json(leaderboard.results);
 });
+
 
 export default auth;

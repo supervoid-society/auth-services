@@ -8,7 +8,7 @@ import imageRoutes from "./routes/images";
 import transactionRoutes from "./routes/transactions";
 
 interface JWTPayload {
-  userId: number;
+  userId: string;
   username: string;
   role: string;
   exp: number;

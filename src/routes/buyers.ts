@@ -7,7 +7,14 @@ type Bindings = {
   D1: D1Database;
 };
 
-const buyers = new Hono<{ Bindings: Bindings }>();
+interface JWTPayload {
+  userId: string;
+  username: string;
+  role: string;
+  exp: number;
+}
+
+const buyers = new Hono<{ Bindings: Bindings; Variables: { jwtPayload: JWTPayload } }>();
 
 buyers.get("/", adminMiddleware, async (c) => {
   const buyers = await c.env.D1.prepare("SELECT * FROM buyers").all();
