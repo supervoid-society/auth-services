@@ -81,14 +81,20 @@ transactions.post("/transfer", authMiddleware, async (c) => {
 
     if (platformFee > 0) {
       batchQueries.push(
-        c.env.D1.prepare("INSERT INTO wallet_transfers (id, sender_id, receiver_id, amount) VALUES (?, ?, '550e8400-e29b-41d4-a716-446655440000', ?)")
-          .bind(crypto.randomUUID(), buyerId, platformFee)
+        c.env.D1.prepare("INSERT INTO wallet_transfers (id, sender_id, receiver_id, amount) VALUES (?, ?, '550e8400-e29b-41d4-a716-446655440000', ?)").bind(
+          crypto.randomUUID(),
+          buyerId,
+          platformFee
+        )
       );
     }
     if (discountAmount > 0) {
       batchQueries.push(
-        c.env.D1.prepare("INSERT INTO wallet_transfers (id, sender_id, receiver_id, amount) VALUES (?, '550e8400-e29b-41d4-a716-446655440000', ?, ?)")
-          .bind(crypto.randomUUID(), sellerId, discountAmount)
+        c.env.D1.prepare("INSERT INTO wallet_transfers (id, sender_id, receiver_id, amount) VALUES (?, '550e8400-e29b-41d4-a716-446655440000', ?, ?)").bind(
+          crypto.randomUUID(),
+          sellerId,
+          discountAmount
+        )
       );
     }
 
@@ -116,11 +122,15 @@ transactions.get("/balance", authMiddleware, async (c) => {
     balance = seller ? seller.balance : 0;
   }
 
+  // Fetch admin balance to include in the signature for promo validation
+  const admin = (await c.env.D1.prepare("SELECT balance FROM buyers WHERE user_id = '550e8400-e29b-41d4-a716-446655440000'").first()) as { balance: number } | undefined;
+  const adminBalance = admin ? admin.balance : 0;
+
   // Create signature for balance
-  const data = { balance, userId, timestamp: Date.now() };
+  const data = { balance, adminBalance, userId, timestamp: Date.now() };
   const signature = await sign(data, c.env.JWT_SECRET);
 
-  return c.json({ balance, signature });
+  return c.json({ balance, adminBalance, signature });
 });
 
 export default transactions;

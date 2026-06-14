@@ -26,6 +26,7 @@ CREATE TABLE users (
     username TEXT NOT NULL UNIQUE,
     password TEXT NOT NULL,
     role TEXT NOT NULL CHECK (role IN ('admin', 'seller', 'buyer')),
+    is_banned INTEGER DEFAULT 0,
     created_at TEXT DEFAULT current_timestamp,
     updated_at TEXT DEFAULT current_timestamp
 );
@@ -148,5 +149,79 @@ CREATE TABLE wallet_requests (
     expect(res.status).toBe(401);
     const data: any = await res.json();
     expect(data.error).toBe("Invalid credentials");
+  });
+
+  it("should allow admin to update a buyer's profile", async () => {
+    // 1. Create an admin user
+    await app.request(
+      "/auth/users",
+      {
+        method: "POST",
+        body: JSON.stringify({
+          username: "adminuser",
+          password: "adminpassword",
+          role: "admin",
+        }),
+        headers: { "Content-Type": "application/json" },
+      },
+      env
+    );
+
+    // 2. Login as admin to get admin token
+    const loginRes = await app.request(
+      "/auth/login",
+      {
+        method: "POST",
+        body: JSON.stringify({
+          username: "adminuser",
+          password: "adminpassword",
+        }),
+        headers: { "Content-Type": "application/json" },
+      },
+      env
+    );
+    const loginData: any = await loginRes.json();
+    const adminToken = loginData.token;
+
+    // 3. Find the ID of the buyer "testuser"
+    const dbUser = (await env.D1.prepare("SELECT id FROM users WHERE username = 'testuser'").first()) as { id: string };
+    const buyerUserId = dbUser.id;
+
+    // 4. Admin updates the buyer's profile details
+    const putRes = await app.request(
+      `/users/${buyerUserId}/admin-profile`,
+      {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${adminToken}`,
+        },
+        body: JSON.stringify({
+          username: "testuser_updated",
+          full_name: "Updated Buyer Name",
+          address: "123 Main St",
+          phone: "08123456789",
+        }),
+      },
+      env
+    );
+    expect(putRes.status).toBe(200);
+
+    // 5. Admin retrieves the updated profile details
+    const getRes = await app.request(
+      `/users/${buyerUserId}/admin-profile`,
+      {
+        headers: {
+          Authorization: `Bearer ${adminToken}`,
+        },
+      },
+      env
+    );
+    expect(getRes.status).toBe(200);
+    const getData: any = await getRes.json();
+    expect(getData.username).toBe("testuser_updated");
+    expect(getData.profile.full_name).toBe("Updated Buyer Name");
+    expect(getData.profile.address).toBe("123 Main St");
+    expect(getData.profile.phone).toBe("08123456789");
   });
 });

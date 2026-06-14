@@ -16,7 +16,19 @@ type Bindings = {
 const users = new Hono<{ Bindings: Bindings; Variables: { jwtPayload: JWTPayload } }>();
 
 users.get("/", adminMiddleware, async (c) => {
-  const users = await c.env.D1.prepare("SELECT id, username, role, is_banned, created_at, updated_at FROM users").all();
+  const users = await c.env.D1.prepare(
+    `
+    SELECT u.id, u.username, u.role, u.is_banned, u.created_at, u.updated_at,
+           CASE 
+             WHEN u.role = 'buyer' THEN b.full_name
+             WHEN u.role = 'seller' THEN s.store_name
+             ELSE u.username
+           END as display_name
+    FROM users u
+    LEFT JOIN buyers b ON u.id = b.user_id
+    LEFT JOIN sellers s ON u.id = s.user_id
+  `
+  ).all();
   return c.json(users.results);
 });
 
@@ -177,6 +189,83 @@ users.post("/:id/unban", adminMiddleware, async (c) => {
   const result = await c.env.D1.prepare("UPDATE users SET is_banned = 0, updated_at = current_timestamp WHERE id = ?").bind(id).run();
   if (result.meta.changes > 0) return c.json({ message: "User unbanned successfully" });
   return c.json({ error: "User not found" }, 404);
+});
+
+users.get("/:id/admin-profile", adminMiddleware, async (c) => {
+  const userId = c.req.param("id");
+  const user = (await c.env.D1.prepare("SELECT id, username, role, is_banned, created_at, updated_at FROM users WHERE id = ?").bind(userId).first()) as any;
+
+  if (user) {
+    let profile: any = {};
+    if (user.role === "buyer") {
+      const buyer = (await c.env.D1.prepare("SELECT * FROM buyers WHERE user_id = ?").bind(userId).first()) as any;
+      if (buyer) {
+        profile = {
+          full_name: buyer.full_name,
+          address: buyer.address,
+          phone: buyer.phone,
+        };
+      }
+    } else if (user.role === "seller") {
+      const seller = (await c.env.D1.prepare("SELECT * FROM sellers WHERE user_id = ?").bind(userId).first()) as any;
+      if (seller) {
+        profile = {
+          store_name: seller.store_name,
+          description: seller.description,
+          contact_phone: seller.contact_phone,
+        };
+      }
+    }
+    return c.json({ ...user, profile });
+  }
+  return c.json({ error: "User not found" }, 404);
+});
+
+users.put("/:id/admin-profile", adminMiddleware, async (c) => {
+  const userId = c.req.param("id");
+  const { username, full_name, address, phone, store_name, description, contact_phone } = await c.req.json();
+
+  // 1. Get user role
+  const user = (await c.env.D1.prepare("SELECT role, username FROM users WHERE id = ?").bind(userId).first()) as { role: string; username: string } | undefined;
+  if (!user) {
+    return c.json({ error: "User not found" }, 404);
+  }
+
+  // 2. Check username uniqueness if changed
+  if (username && username !== user.username) {
+    const existing = await c.env.D1.prepare("SELECT id FROM users WHERE username = ? AND id != ?").bind(username, userId).first();
+    if (existing) return c.json({ error: "Username already exists" }, 400);
+
+    // Update username
+    await c.env.D1.prepare("UPDATE users SET username = ?, updated_at = current_timestamp WHERE id = ?").bind(username, userId).run();
+  }
+
+  // 3. Update profile information based on role
+  if (user.role === "buyer") {
+    const buyer = await c.env.D1.prepare("SELECT id FROM buyers WHERE user_id = ?").bind(userId).first();
+    if (buyer) {
+      await c.env.D1.prepare("UPDATE buyers SET full_name = ?, address = ?, phone = ?, updated_at = current_timestamp WHERE user_id = ?")
+        .bind(full_name, address || null, phone || null, userId)
+        .run();
+    } else {
+      await c.env.D1.prepare("INSERT INTO buyers (id, user_id, full_name, address, phone) VALUES (?, ?, ?, ?, ?)")
+        .bind(crypto.randomUUID(), userId, full_name || "", address || null, phone || null)
+        .run();
+    }
+  } else if (user.role === "seller") {
+    const seller = await c.env.D1.prepare("SELECT id FROM sellers WHERE user_id = ?").bind(userId).first();
+    if (seller) {
+      await c.env.D1.prepare("UPDATE sellers SET store_name = ?, description = ?, contact_phone = ?, updated_at = current_timestamp WHERE user_id = ?")
+        .bind(store_name, description || null, contact_phone || null, userId)
+        .run();
+    } else {
+      await c.env.D1.prepare("INSERT INTO sellers (id, user_id, store_name, description, contact_phone) VALUES (?, ?, ?, ?, ?)")
+        .bind(crypto.randomUUID(), userId, store_name || "", description || null, contact_phone || null)
+        .run();
+    }
+  }
+
+  return c.json({ message: "User information updated successfully" });
 });
 
 export default users;
