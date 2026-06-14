@@ -53,10 +53,15 @@ sellers.post("/", async (c) => {
 
 sellers.put("/me", authMiddleware, async (c) => {
   const payload = c.get("jwtPayload");
-  const { store_name, description, contact_phone, image_base64, image_content_type } = await c.req.json();
+  const { store_name, description, contact_phone, image_base64, image_content_type, delete_image } = await c.req.json();
   
-  let imageId = null;
-  if (image_base64) {
+  const currentSeller = await c.env.D1.prepare("SELECT image_id FROM sellers WHERE user_id = ?").bind(payload.userId).first() as { image_id: string | null } | null;
+  if (!currentSeller) return c.json({ error: "Seller profile not found" }, 404);
+
+  let imageId = currentSeller.image_id;
+  if (delete_image === true) {
+    imageId = null;
+  } else if (image_base64) {
     imageId = await saveImage(c, image_base64, image_content_type || "image/jpeg");
     if (!imageId) {
       return c.json({ error: "Failed to save image" }, 500);
