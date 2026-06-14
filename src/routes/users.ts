@@ -70,7 +70,7 @@ users.get("/profile-image/:userId", async (c) => {
     return c.json({ error: "User not found" }, 404);
   }
 
-  const role = (forceRole === "buyer" || forceRole === "seller" || forceRole === "admin") ? forceRole : user.role;
+  const role = forceRole === "buyer" || forceRole === "seller" || forceRole === "admin" ? forceRole : user.role;
 
   let profileImage = null;
 
