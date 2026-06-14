@@ -22,7 +22,7 @@ type Bindings = {
 
 const app = new Hono<{ Bindings: Bindings; Variables: { jwtPayload: JWTPayload } }>();
 
-app.use('*', async (c, next) => {
+app.use("*", async (c, next) => {
   if (!c.env.D1) {
     console.error("PROD ERROR: D1 binding is MISSING!");
   }
@@ -32,7 +32,7 @@ app.use('*', async (c, next) => {
   await next();
 });
 
-app.use('*', cors({ origin: '*' }));
+app.use("*", cors({ origin: "*" }));
 
 app.get("/", (c) => {
   return c.text("Hello Hono!");

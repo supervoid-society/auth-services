@@ -21,7 +21,7 @@ transactions.post("/transfer", authMiddleware, async (c) => {
   const { transactionId, sellerId, amount, signature } = await c.req.json();
   const payload = c.get("jwtPayload");
 
-  if (payload.role !== 'buyer') {
+  if (payload.role !== "buyer") {
     return c.json({ error: "Only buyers can initiate transfers" }, 403);
   }
 
@@ -34,11 +34,7 @@ transactions.post("/transfer", authMiddleware, async (c) => {
       return c.json({ error: "Invalid signature" }, 400);
     }
     const sigPayload = decoded.payload as any;
-    if (!sigPayload ||
-        sigPayload.transactionId !== transactionId ||
-        sigPayload.sellerId !== sellerId ||
-        sigPayload.amount !== amount ||
-        sigPayload.buyerId !== buyerId) {
+    if (!sigPayload || sigPayload.transactionId !== transactionId || sigPayload.sellerId !== sellerId || sigPayload.amount !== amount || sigPayload.buyerId !== buyerId) {
       return c.json({ error: "Invalid signature" }, 400);
     }
   } catch (error) {
@@ -46,7 +42,7 @@ transactions.post("/transfer", authMiddleware, async (c) => {
   }
 
   // Get buyer balance
-  const buyer = await c.env.D1.prepare("SELECT balance FROM buyers WHERE user_id = ?").bind(buyerId).first() as { balance: number } | undefined;
+  const buyer = (await c.env.D1.prepare("SELECT balance FROM buyers WHERE user_id = ?").bind(buyerId).first()) as { balance: number } | undefined;
   if (!buyer) {
     return c.json({ error: "Buyer not found" }, 404);
   }
@@ -79,11 +75,11 @@ transactions.get("/balance", authMiddleware, async (c) => {
   const role = payload.role;
 
   let balance = 0;
-  if (role === 'buyer') {
-    const buyer = await c.env.D1.prepare("SELECT balance FROM buyers WHERE user_id = ?").bind(userId).first() as { balance: number } | undefined;
+  if (role === "buyer") {
+    const buyer = (await c.env.D1.prepare("SELECT balance FROM buyers WHERE user_id = ?").bind(userId).first()) as { balance: number } | undefined;
     balance = buyer ? buyer.balance : 0;
-  } else if (role === 'seller') {
-    const seller = await c.env.D1.prepare("SELECT balance FROM sellers WHERE user_id = ?").bind(userId).first() as { balance: number } | undefined;
+  } else if (role === "seller") {
+    const seller = (await c.env.D1.prepare("SELECT balance FROM sellers WHERE user_id = ?").bind(userId).first()) as { balance: number } | undefined;
     balance = seller ? seller.balance : 0;
   }
 

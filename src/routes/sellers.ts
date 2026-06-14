@@ -47,15 +47,17 @@ sellers.post("/", async (c) => {
   const existing = await c.env.D1.prepare("SELECT id FROM sellers WHERE user_id = ?").bind(user_id).first();
   if (existing) return c.json({ error: "Seller already exists for this user" }, 400);
   const sellerId = crypto.randomUUID();
-  await c.env.D1.prepare("INSERT INTO sellers (id, user_id, store_name, description, contact_phone) VALUES (?, ?, ?, ?, ?)").bind(sellerId, user_id, store_name, description || null, contact_phone || null).run();
+  await c.env.D1.prepare("INSERT INTO sellers (id, user_id, store_name, description, contact_phone) VALUES (?, ?, ?, ?, ?)")
+    .bind(sellerId, user_id, store_name, description || null, contact_phone || null)
+    .run();
   return c.json({ id: sellerId });
 });
 
 sellers.put("/me", authMiddleware, async (c) => {
   const payload = c.get("jwtPayload");
   const { store_name, description, contact_phone, image_base64, image_content_type, delete_image } = await c.req.json();
-  
-  const currentSeller = await c.env.D1.prepare("SELECT image_id FROM sellers WHERE user_id = ?").bind(payload.userId).first() as { image_id: string | null } | null;
+
+  const currentSeller = (await c.env.D1.prepare("SELECT image_id FROM sellers WHERE user_id = ?").bind(payload.userId).first()) as { image_id: string | null } | null;
   if (!currentSeller) return c.json({ error: "Seller profile not found" }, 404);
 
   let imageId = currentSeller.image_id;
@@ -67,8 +69,10 @@ sellers.put("/me", authMiddleware, async (c) => {
       return c.json({ error: "Failed to save image" }, 500);
     }
   }
-  
-  const result = await c.env.D1.prepare("UPDATE sellers SET store_name = ?, description = ?, contact_phone = ?, image_id = ?, updated_at = current_timestamp WHERE user_id = ?").bind(store_name, description || null, contact_phone || null, imageId, payload.userId).run();
+
+  const result = await c.env.D1.prepare("UPDATE sellers SET store_name = ?, description = ?, contact_phone = ?, image_id = ?, updated_at = current_timestamp WHERE user_id = ?")
+    .bind(store_name, description || null, contact_phone || null, imageId, payload.userId)
+    .run();
   if (result.meta.changes > 0) return c.json({ message: "Seller profile updated" });
   return c.json({ error: "Seller profile not found" }, 404);
 });
@@ -76,7 +80,9 @@ sellers.put("/me", authMiddleware, async (c) => {
 sellers.put("/:id", adminMiddleware, async (c) => {
   const id = c.req.param("id");
   const { user_id, store_name, description, contact_phone } = await c.req.json();
-  const result = await c.env.D1.prepare("UPDATE sellers SET user_id = ?, store_name = ?, description = ?, contact_phone = ?, updated_at = current_timestamp WHERE id = ?").bind(user_id, store_name, description || null, contact_phone || null, id).run();
+  const result = await c.env.D1.prepare("UPDATE sellers SET user_id = ?, store_name = ?, description = ?, contact_phone = ?, updated_at = current_timestamp WHERE id = ?")
+    .bind(user_id, store_name, description || null, contact_phone || null, id)
+    .run();
   if (result.meta.changes > 0) return c.json({ message: "Seller updated" });
   return c.json({ error: "Seller not found" }, 404);
 });
