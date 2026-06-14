@@ -112,4 +112,33 @@ CREATE TABLE active_challenges (id TEXT PRIMARY KEY, challenge TEXT NOT NULL UNI
     const data: any = await res.json();
     expect(data.full_name).toBe("Integration Buyer");
   });
+
+  it("5. Test profile-image fetching with role query param", async () => {
+    // 1. Insert dummy image
+    const imageId = crypto.randomUUID();
+    const dummyData = new Uint8Array([255, 216, 255, 224]);
+    await env.D1.prepare("INSERT INTO images (id, data, content_type) VALUES (?, ?, ?)").bind(imageId, dummyData, "image/jpeg").run();
+
+    // 2. Link image to buyer
+    await env.D1.prepare("UPDATE buyers SET image_id = ? WHERE user_id = ?").bind(imageId, buyerId).run();
+
+    // 3. Request buyer profile image using default role (buyer)
+    const resDefault = await app.request(`/users/profile-image/${buyerId}`, {}, env);
+    expect(resDefault.status).toBe(200);
+
+    // 4. Request buyer profile image by forcing role=buyer
+    const resForced = await app.request(`/users/profile-image/${buyerId}?role=buyer`, {}, env);
+    expect(resForced.status).toBe(200);
+
+    // 5. Change user role to seller directly in DB
+    await env.D1.prepare("UPDATE users SET role = 'seller' WHERE id = ?").bind(buyerId).run();
+
+    // Since buyer has no seller profile/image, default role (seller) should return 404
+    const resDefaultSeller = await app.request(`/users/profile-image/${buyerId}`, {}, env);
+    expect(resDefaultSeller.status).toBe(404);
+
+    // But forcing role=buyer should still retrieve the buyer profile image!
+    const resForcedBuyer = await app.request(`/users/profile-image/${buyerId}?role=buyer`, {}, env);
+    expect(resForcedBuyer.status).toBe(200);
+  });
 });

@@ -62,20 +62,24 @@ users.get("/:id", async (c) => {
 users.get("/profile-image/:userId", async (c) => {
   const userId = c.req.param("userId");
 
+  const forceRole = c.req.query("role");
+
   // First check if user exists
   const user = await c.env.D1.prepare("SELECT role FROM users WHERE id = ?").bind(userId).first();
   if (!user) {
     return c.json({ error: "User not found" }, 404);
   }
 
+  const role = (forceRole === "buyer" || forceRole === "seller" || forceRole === "admin") ? forceRole : user.role;
+
   let profileImage = null;
 
-  if (user.role === "seller") {
+  if (role === "seller") {
     const seller = await c.env.D1.prepare("SELECT image_id FROM sellers WHERE user_id = ?").bind(userId).first();
     if (seller && seller.image_id) {
       profileImage = await c.env.D1.prepare("SELECT * FROM images WHERE id = ?").bind(seller.image_id).first();
     }
-  } else if (user.role === "buyer" || user.role === "admin") {
+  } else if (role === "buyer" || role === "admin") {
     const buyer = await c.env.D1.prepare("SELECT image_id FROM buyers WHERE user_id = ?").bind(userId).first();
     if (buyer && buyer.image_id) {
       profileImage = await c.env.D1.prepare("SELECT * FROM images WHERE id = ?").bind(buyer.image_id).first();
@@ -94,13 +98,17 @@ users.get("/profile-image/:userId", async (c) => {
         console.error("Invalid base64 data:", e);
         return new Response("Invalid image data", { status: 500 });
       }
-    } else if (data instanceof ArrayBuffer) {
-      binaryData = new Uint8Array(data);
     } else if (data instanceof Uint8Array) {
       binaryData = data;
-    } else if (data && typeof data === "object" && !Array.isArray(data)) {
-      // Handle cases where it might be a Buffer-like object with numeric keys
-      binaryData = new Uint8Array(Object.values(data));
+    } else if (data && typeof data === "object") {
+      // Universal conversion for object-like binary data (Buffer, Uint8Array from different context, etc.)
+      const values = Object.values(data);
+      if (values.every((v) => typeof v === "number")) {
+        binaryData = new Uint8Array(values as number[]);
+      } else {
+        console.error("Object data is not numeric:", typeof data);
+        return new Response("Invalid image data format", { status: 500 });
+      }
     } else {
       console.error("Unsupported data type:", typeof data);
       return new Response("Unsupported image data type", { status: 500 });
