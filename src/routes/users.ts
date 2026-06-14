@@ -47,7 +47,7 @@ users.get("/:id", async (c) => {
 
   if (user) {
     let displayName = user.username;
-    if (user.role === "buyer") {
+    if (user.role === "buyer" || user.role === "admin") {
       const buyer = (await c.env.D1.prepare("SELECT full_name FROM buyers WHERE user_id = ?").bind(userId).first()) as { full_name: string } | undefined;
       if (buyer) displayName = buyer.full_name;
     } else if (user.role === "seller") {
@@ -75,7 +75,7 @@ users.get("/profile-image/:userId", async (c) => {
     if (seller && seller.image_id) {
       profileImage = await c.env.D1.prepare("SELECT * FROM images WHERE id = ?").bind(seller.image_id).first();
     }
-  } else if (user.role === "buyer") {
+  } else if (user.role === "buyer" || user.role === "admin") {
     const buyer = await c.env.D1.prepare("SELECT image_id FROM buyers WHERE user_id = ?").bind(userId).first();
     if (buyer && buyer.image_id) {
       profileImage = await c.env.D1.prepare("SELECT * FROM images WHERE id = ?").bind(buyer.image_id).first();
@@ -197,7 +197,7 @@ users.get("/:id/admin-profile", adminMiddleware, async (c) => {
 
   if (user) {
     let profile: any = {};
-    if (user.role === "buyer") {
+    if (user.role === "buyer" || user.role === "admin") {
       const buyer = (await c.env.D1.prepare("SELECT * FROM buyers WHERE user_id = ?").bind(userId).first()) as any;
       if (buyer) {
         profile = {
@@ -241,7 +241,7 @@ users.put("/:id/admin-profile", adminMiddleware, async (c) => {
   }
 
   // 3. Update profile information based on role
-  if (user.role === "buyer") {
+  if (user.role === "buyer" || user.role === "admin") {
     const buyer = await c.env.D1.prepare("SELECT id FROM buyers WHERE user_id = ?").bind(userId).first();
     if (buyer) {
       await c.env.D1.prepare("UPDATE buyers SET full_name = ?, address = ?, phone = ?, updated_at = current_timestamp WHERE user_id = ?")
