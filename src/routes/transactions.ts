@@ -27,6 +27,9 @@ transactions.post("/transfer", authMiddleware, async (c) => {
 
   const buyerId = payload.userId;
 
+  let platformFee = 0;
+  let discountAmount = 0;
+
   // Verify signature
   try {
     const decoded = await verify(signature, c.env.JWT_SECRET);
@@ -37,8 +40,18 @@ transactions.post("/transfer", authMiddleware, async (c) => {
     if (!sigPayload || sigPayload.transactionId !== transactionId || sigPayload.sellerId !== sellerId || sigPayload.amount !== amount || sigPayload.buyerId !== buyerId) {
       return c.json({ error: "Invalid signature" }, 400);
     }
+    platformFee = Number(sigPayload.platform_fee || 0);
+    discountAmount = Number(sigPayload.discount_amount || 0);
   } catch (error) {
     return c.json({ error: "Signature verification failed" }, 400);
+  }
+
+  // 1. If there's a promo discount, check if admin wallet has enough balance to cover it
+  if (discountAmount > 0) {
+    const admin = (await c.env.D1.prepare("SELECT balance FROM buyers WHERE user_id = '550e8400-e29b-41d4-a716-446655440000'").first()) as { balance: number } | undefined;
+    if (!admin || admin.balance < discountAmount) {
+      return c.json({ error: "Transaksi gagal: Saldo wallet admin tidak cukup untuk mensubsidi diskon promo." }, 400);
+    }
   }
 
   // Get buyer balance
@@ -47,7 +60,8 @@ transactions.post("/transfer", authMiddleware, async (c) => {
     return c.json({ error: "Buyer not found" }, 404);
   }
 
-  if (buyer.balance < amount) {
+  const buyerCost = amount + platformFee - discountAmount;
+  if (buyer.balance < buyerCost) {
     return c.json({ error: "Insufficient balance" }, 400);
   }
 
@@ -59,9 +73,28 @@ transactions.post("/transfer", authMiddleware, async (c) => {
 
   // Perform transfer in transaction
   try {
-    await c.env.D1.prepare("UPDATE buyers SET balance = balance - ? WHERE user_id = ?").bind(amount, buyerId).run();
-    await c.env.D1.prepare("UPDATE sellers SET balance = balance + ? WHERE user_id = ?").bind(amount, sellerId).run();
+    const batchQueries = [
+      c.env.D1.prepare("UPDATE buyers SET balance = balance - ? WHERE user_id = ?").bind(buyerCost, buyerId),
+      c.env.D1.prepare("UPDATE sellers SET balance = balance + ? WHERE user_id = ?").bind(amount, sellerId),
+      c.env.D1.prepare("UPDATE buyers SET balance = balance + ? - ? WHERE user_id = '550e8400-e29b-41d4-a716-446655440000'").bind(platformFee, discountAmount),
+    ];
+
+    if (platformFee > 0) {
+      batchQueries.push(
+        c.env.D1.prepare("INSERT INTO wallet_transfers (id, sender_id, receiver_id, amount) VALUES (?, ?, '550e8400-e29b-41d4-a716-446655440000', ?)")
+          .bind(crypto.randomUUID(), buyerId, platformFee)
+      );
+    }
+    if (discountAmount > 0) {
+      batchQueries.push(
+        c.env.D1.prepare("INSERT INTO wallet_transfers (id, sender_id, receiver_id, amount) VALUES (?, '550e8400-e29b-41d4-a716-446655440000', ?, ?)")
+          .bind(crypto.randomUUID(), sellerId, discountAmount)
+      );
+    }
+
+    await c.env.D1.batch(batchQueries);
   } catch (error) {
+    console.error("Transfer execution failed:", error);
     return c.json({ error: "Transfer failed" }, 500);
   }
 

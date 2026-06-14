@@ -74,3 +74,4 @@ CREATE TABLE wallet_requests (
 );
 
 INSERT INTO users (id, username, password, role) VALUES ('550e8400-e29b-41d4-a716-446655440000', 'admin', 'admin', 'admin');
+INSERT INTO buyers (id, user_id, full_name, balance) VALUES ('550e8400-e29b-41d4-a716-446655440001', '550e8400-e29b-41d4-a716-446655440000', 'Admin Platform', 1000000.00);

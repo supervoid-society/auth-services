@@ -27,6 +27,18 @@ auth.post("/login", async (c) => {
     if (user.is_banned === 1) {
       return c.json({ error: "Akun Anda telah dibanned." }, 403);
     }
+    
+    // Auto-create buyer profile/wallet for admin if missing
+    if (user.role === "admin") {
+      const existingBuyer = await c.env.D1.prepare("SELECT id FROM buyers WHERE user_id = ?").bind(user.id).first();
+      if (!existingBuyer) {
+        const buyerId = crypto.randomUUID();
+        await c.env.D1.prepare("INSERT INTO buyers (id, user_id, full_name, balance) VALUES (?, ?, ?, 1000000.00)")
+          .bind(buyerId, user.id, "Admin Platform")
+          .run();
+      }
+    }
+
     const secret = c.env.JWT_SECRET;
     const payload = {
       userId: user.id,
