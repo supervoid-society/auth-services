@@ -20,10 +20,13 @@ auth.post("/login", async (c) => {
   const { username, password } = await c.req.json();
 
   const user = (await c.env.D1.prepare("SELECT * FROM users WHERE username = ? AND password = ?").bind(username, password).first()) as
-    | { id: string; username: string; role: string }
+    | { id: string; username: string; role: string; is_banned?: number }
     | undefined;
 
   if (user) {
+    if (user.is_banned === 1) {
+      return c.json({ error: "Akun Anda telah dibanned." }, 403);
+    }
     const secret = c.env.JWT_SECRET;
     const payload = {
       userId: user.id,

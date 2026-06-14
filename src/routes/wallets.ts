@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import { authMiddleware } from "../middleware/auth";
+import { adminMiddleware, authMiddleware } from "../middleware/auth";
 
 type Bindings = {
   JWT_SECRET: string;
@@ -257,6 +257,56 @@ wallets.post("/internal-transfer", authMiddleware, async (c) => {
   } catch (error) {
     console.error("Internal transfer failed:", error);
     return c.json({ error: "Internal transfer failed" }, 500);
+  }
+});
+
+// Admin endpoint to view overall platform wallet statistics and logs
+wallets.get("/admin/stats", adminMiddleware, async (c) => {
+  try {
+    // 1. Get sum of all buyer and seller balances
+    const buyerBalanceRes = (await c.env.D1.prepare("SELECT SUM(balance) as total FROM buyers").first()) as { total: number | null } | undefined;
+    const sellerBalanceRes = (await c.env.D1.prepare("SELECT SUM(balance) as total FROM sellers").first()) as { total: number | null } | undefined;
+
+    const totalBuyersBalance = buyerBalanceRes?.total || 0;
+    const totalSellersBalance = sellerBalanceRes?.total || 0;
+    const totalBalance = totalBuyersBalance + totalSellersBalance;
+
+    // 2. Fetch all transfers
+    const transfers = await c.env.D1.prepare(
+      `
+      SELECT wt.*, u_from.username as sender_name, u_to.username as receiver_name
+      FROM wallet_transfers wt
+      JOIN users u_from ON wt.sender_id = u_from.id
+      JOIN users u_to ON wt.receiver_id = u_to.id
+      ORDER BY wt.created_at DESC
+      LIMIT 100
+      `
+    ).all();
+
+    // 3. Fetch all requests
+    const requests = await c.env.D1.prepare(
+      `
+      SELECT wr.*, u_req.username as requester_name, u_tar.username as target_name
+      FROM wallet_requests wr
+      JOIN users u_req ON wr.requester_id = u_req.id
+      JOIN users u_tar ON wr.target_id = u_tar.id
+      ORDER BY wr.created_at DESC
+      LIMIT 100
+      `
+    ).all();
+
+    return c.json({
+      balances: {
+        totalBuyersBalance,
+        totalSellersBalance,
+        totalBalance,
+      },
+      transfers: transfers.results,
+      requests: requests.results,
+    });
+  } catch (error) {
+    console.error("Failed to fetch admin wallet stats:", error);
+    return c.json({ error: "Failed to fetch admin wallet stats" }, 500);
   }
 });
 

@@ -16,7 +16,7 @@ type Bindings = {
 const users = new Hono<{ Bindings: Bindings; Variables: { jwtPayload: JWTPayload } }>();
 
 users.get("/", adminMiddleware, async (c) => {
-  const users = await c.env.D1.prepare("SELECT id, username, role, created_at, updated_at FROM users").all();
+  const users = await c.env.D1.prepare("SELECT id, username, role, is_banned, created_at, updated_at FROM users").all();
   return c.json(users.results);
 });
 
@@ -159,30 +159,23 @@ users.put("/me", authMiddleware, async (c) => {
   return c.json({ error: "User not found" }, 404);
 });
 
-users.put("/:id", adminMiddleware, async (c) => {
-  const id = c.req.param("id");
-  const { username, password } = await c.req.json();
-  const result = await c.env.D1.prepare("UPDATE users SET username = ?, password = ?, updated_at = current_timestamp WHERE id = ?").bind(username, password, id).run();
-  if (result.meta.changes > 0) return c.json({ message: "User updated" });
-  return c.json({ error: "User not found" }, 404);
-});
-
-users.delete("/:id", adminMiddleware, async (c) => {
+users.post("/:id/ban", adminMiddleware, async (c) => {
   const id = c.req.param("id");
   const jwtPayload = c.get("jwtPayload");
 
   if (id === jwtPayload.userId) {
-    return c.json({ error: "Cannot delete your own account" }, 400);
+    return c.json({ error: "Anda tidak bisa membanned akun sendiri." }, 400);
   }
 
-  const userCountResult = await c.env.D1.prepare("SELECT COUNT(*) as count FROM users").first();
-  const userCount = (userCountResult as { count: number }).count;
-  if (userCount <= 1) {
-    return c.json({ error: "Cannot delete the last user" }, 400);
-  }
+  const result = await c.env.D1.prepare("UPDATE users SET is_banned = 1, updated_at = current_timestamp WHERE id = ?").bind(id).run();
+  if (result.meta.changes > 0) return c.json({ message: "User banned successfully" });
+  return c.json({ error: "User not found" }, 404);
+});
 
-  const result = await c.env.D1.prepare("DELETE FROM users WHERE id = ?").bind(id).run();
-  if (result.meta.changes > 0) return c.json({ message: "User deleted" });
+users.post("/:id/unban", adminMiddleware, async (c) => {
+  const id = c.req.param("id");
+  const result = await c.env.D1.prepare("UPDATE users SET is_banned = 0, updated_at = current_timestamp WHERE id = ?").bind(id).run();
+  if (result.meta.changes > 0) return c.json({ message: "User unbanned successfully" });
   return c.json({ error: "User not found" }, 404);
 });
 

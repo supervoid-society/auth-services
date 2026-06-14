@@ -80,7 +80,7 @@ CREATE TABLE wallet_requests (
     FOREIGN KEY (target_id) REFERENCES users(id) ON DELETE CASCADE
 );
 `;
-    const queries = schema.split(";").filter(q => q.trim());
+    const queries = schema.split(";").filter((q) => q.trim());
     for (const query of queries) {
       await env.D1.prepare(query).run();
     }
@@ -93,15 +93,19 @@ CREATE TABLE wallet_requests (
   });
 
   it("should create a user", async () => {
-    const res = await app.request("/auth/users", {
-      method: "POST",
-      body: JSON.stringify({
-        username: "testuser",
-        password: "testpassword",
-        role: "buyer"
-      }),
-      headers: { "Content-Type": "application/json" }
-    }, env);
+    const res = await app.request(
+      "/auth/users",
+      {
+        method: "POST",
+        body: JSON.stringify({
+          username: "testuser",
+          password: "testpassword",
+          role: "buyer",
+        }),
+        headers: { "Content-Type": "application/json" },
+      },
+      env
+    );
 
     expect(res.status).toBe(200);
     const data: any = await res.json();
@@ -109,14 +113,18 @@ CREATE TABLE wallet_requests (
   });
 
   it("should login successfully", async () => {
-    const res = await app.request("/auth/login", {
-      method: "POST",
-      body: JSON.stringify({
-        username: "testuser",
-        password: "testpassword"
-      }),
-      headers: { "Content-Type": "application/json" }
-    }, env);
+    const res = await app.request(
+      "/auth/login",
+      {
+        method: "POST",
+        body: JSON.stringify({
+          username: "testuser",
+          password: "testpassword",
+        }),
+        headers: { "Content-Type": "application/json" },
+      },
+      env
+    );
 
     expect(res.status).toBe(200);
     const data: any = await res.json();
@@ -124,14 +132,18 @@ CREATE TABLE wallet_requests (
   });
 
   it("should return error for invalid login", async () => {
-    const res = await app.request("/auth/login", {
-      method: "POST",
-      body: JSON.stringify({
-        username: "testuser",
-        password: "wrongpassword"
-      }),
-      headers: { "Content-Type": "application/json" }
-    }, env);
+    const res = await app.request(
+      "/auth/login",
+      {
+        method: "POST",
+        body: JSON.stringify({
+          username: "testuser",
+          password: "wrongpassword",
+        }),
+        headers: { "Content-Type": "application/json" },
+      },
+      env
+    );
 
     expect(res.status).toBe(401);
     const data: any = await res.json();

@@ -24,56 +24,76 @@ CREATE TABLE buyers (id TEXT PRIMARY KEY, user_id TEXT NOT NULL UNIQUE, full_nam
 CREATE TABLE solved_tasks (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, challenge TEXT NOT NULL, nonce TEXT NOT NULL, difficulty INTEGER NOT NULL, solved_at TEXT DEFAULT current_timestamp, FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE);
 CREATE TABLE active_challenges (id TEXT PRIMARY KEY, challenge TEXT NOT NULL UNIQUE, difficulty INTEGER NOT NULL, created_at TEXT DEFAULT current_timestamp);
 `;
-    const queries = schema.split(";").filter(q => q.trim());
+    const queries = schema.split(";").filter((q) => q.trim());
     for (const query of queries) {
       await env.D1.prepare(query).run();
     }
   });
 
   it("1. Register a new buyer", async () => {
-    const res = await app.request("/auth/users", {
-      method: "POST",
-      body: JSON.stringify({ username: "int_buyer", password: "pwd", role: "buyer" }),
-      headers: { "Content-Type": "application/json" }
-    }, env);
+    const res = await app.request(
+      "/auth/users",
+      {
+        method: "POST",
+        body: JSON.stringify({ username: "int_buyer", password: "pwd", role: "buyer" }),
+        headers: { "Content-Type": "application/json" },
+      },
+      env
+    );
     expect(res.status).toBe(200);
     const data: any = await res.json();
     buyerId = data.id;
 
     // Create buyer profile
-    const profileRes = await app.request("/auth/buyers", {
-      method: "POST",
-      body: JSON.stringify({ user_id: buyerId, full_name: "Integration Buyer" }),
-      headers: { "Content-Type": "application/json" }
-    }, env);
+    const profileRes = await app.request(
+      "/auth/buyers",
+      {
+        method: "POST",
+        body: JSON.stringify({ user_id: buyerId, full_name: "Integration Buyer" }),
+        headers: { "Content-Type": "application/json" },
+      },
+      env
+    );
     expect(profileRes.status).toBe(200);
   });
 
   it("2. Register a new seller", async () => {
-    const res = await app.request("/auth/users", {
-      method: "POST",
-      body: JSON.stringify({ username: "int_seller", password: "pwd", role: "seller" }),
-      headers: { "Content-Type": "application/json" }
-    }, env);
+    const res = await app.request(
+      "/auth/users",
+      {
+        method: "POST",
+        body: JSON.stringify({ username: "int_seller", password: "pwd", role: "seller" }),
+        headers: { "Content-Type": "application/json" },
+      },
+      env
+    );
     expect(res.status).toBe(200);
     const data: any = await res.json();
     sellerId = data.id;
 
     // Create seller profile
-    const profileRes = await app.request("/auth/sellers", {
-      method: "POST",
-      body: JSON.stringify({ user_id: sellerId, store_name: "Integration Store" }),
-      headers: { "Content-Type": "application/json" }
-    }, env);
+    const profileRes = await app.request(
+      "/auth/sellers",
+      {
+        method: "POST",
+        body: JSON.stringify({ user_id: sellerId, store_name: "Integration Store" }),
+        headers: { "Content-Type": "application/json" },
+      },
+      env
+    );
     expect(profileRes.status).toBe(200);
   });
 
   it("3. Login as buyer", async () => {
-    const res = await app.request("/auth/login", {
-      method: "POST",
-      body: JSON.stringify({ username: "int_buyer", password: "pwd" }),
-      headers: { "Content-Type": "application/json" }
-    }, env);
+    const res = await app.request(
+      "/auth/login",
+      {
+        method: "POST",
+        body: JSON.stringify({ username: "int_buyer", password: "pwd" }),
+        headers: { "Content-Type": "application/json" },
+      },
+      env
+    );
     expect(res.status).toBe(200);
     const data: any = await res.json();
     buyerToken = data.token;
@@ -81,9 +101,13 @@ CREATE TABLE active_challenges (id TEXT PRIMARY KEY, challenge TEXT NOT NULL UNI
   });
 
   it("4. Buyer attempts to fetch profile", async () => {
-    const res = await app.request("/buyers/me", {
-      headers: { "Authorization": `Bearer ${buyerToken}` }
-    }, env);
+    const res = await app.request(
+      "/buyers/me",
+      {
+        headers: { Authorization: `Bearer ${buyerToken}` },
+      },
+      env
+    );
     expect(res.status).toBe(200);
     const data: any = await res.json();
     expect(data.full_name).toBe("Integration Buyer");

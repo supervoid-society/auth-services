@@ -85,57 +85,81 @@ CREATE TABLE wallet_requests (
     FOREIGN KEY (target_id) REFERENCES users(id) ON DELETE CASCADE
 );
 `;
-    const queries = schema.split(";").filter(q => q.trim());
+    const queries = schema.split(";").filter((q) => q.trim());
     for (const query of queries) {
       await env.D1.prepare(query).run();
     }
 
     // Create a buyer
-    const buyerRes = await app.request("/auth/users", {
-      method: "POST",
-      body: JSON.stringify({ username: "buyer1", password: "password", role: "buyer" }),
-      headers: { "Content-Type": "application/json" }
-    }, env);
+    const buyerRes = await app.request(
+      "/auth/users",
+      {
+        method: "POST",
+        body: JSON.stringify({ username: "buyer1", password: "password", role: "buyer" }),
+        headers: { "Content-Type": "application/json" },
+      },
+      env
+    );
     const buyerData: any = await buyerRes.json();
     buyerId = buyerData.id;
 
     // Create buyer profile
-    await app.request("/auth/buyers", {
-      method: "POST",
-      body: JSON.stringify({ user_id: buyerId, full_name: "Buyer One" }),
-      headers: { "Content-Type": "application/json" }
-    }, env);
+    await app.request(
+      "/auth/buyers",
+      {
+        method: "POST",
+        body: JSON.stringify({ user_id: buyerId, full_name: "Buyer One" }),
+        headers: { "Content-Type": "application/json" },
+      },
+      env
+    );
 
     // Create a seller
-    const sellerRes = await app.request("/auth/users", {
-      method: "POST",
-      body: JSON.stringify({ username: "seller1", password: "password", role: "seller" }),
-      headers: { "Content-Type": "application/json" }
-    }, env);
+    const sellerRes = await app.request(
+      "/auth/users",
+      {
+        method: "POST",
+        body: JSON.stringify({ username: "seller1", password: "password", role: "seller" }),
+        headers: { "Content-Type": "application/json" },
+      },
+      env
+    );
     const sellerData: any = await sellerRes.json();
     sellerId = sellerData.id;
 
     // Create seller profile
-    await app.request("/auth/sellers", {
-      method: "POST",
-      body: JSON.stringify({ user_id: sellerId, store_name: "Seller One" }),
-      headers: { "Content-Type": "application/json" }
-    }, env);
+    await app.request(
+      "/auth/sellers",
+      {
+        method: "POST",
+        body: JSON.stringify({ user_id: sellerId, store_name: "Seller One" }),
+        headers: { "Content-Type": "application/json" },
+      },
+      env
+    );
 
     // Login buyer
-    const buyerLogin = await app.request("/auth/login", {
-      method: "POST",
-      body: JSON.stringify({ username: "buyer1", password: "password" }),
-      headers: { "Content-Type": "application/json" }
-    }, env);
+    const buyerLogin = await app.request(
+      "/auth/login",
+      {
+        method: "POST",
+        body: JSON.stringify({ username: "buyer1", password: "password" }),
+        headers: { "Content-Type": "application/json" },
+      },
+      env
+    );
     buyerToken = ((await buyerLogin.json()) as any).token;
 
     // Login seller
-    const sellerLogin = await app.request("/auth/login", {
-      method: "POST",
-      body: JSON.stringify({ username: "seller1", password: "password" }),
-      headers: { "Content-Type": "application/json" }
-    }, env);
+    const sellerLogin = await app.request(
+      "/auth/login",
+      {
+        method: "POST",
+        body: JSON.stringify({ username: "seller1", password: "password" }),
+        headers: { "Content-Type": "application/json" },
+      },
+      env
+    );
     sellerToken = ((await sellerLogin.json()) as any).token;
 
     // Give buyer some balance
@@ -143,9 +167,13 @@ CREATE TABLE wallet_requests (
   });
 
   it("should search users", async () => {
-    const res = await app.request("/wallets/search?q=sel", {
-      headers: { Authorization: `Bearer ${buyerToken}` }
-    }, env);
+    const res = await app.request(
+      "/wallets/search?q=sel",
+      {
+        headers: { Authorization: `Bearer ${buyerToken}` },
+      },
+      env
+    );
     expect(res.status).toBe(200);
     const data: any = await res.json();
     expect(data.length).toBeGreaterThan(0);
@@ -153,14 +181,18 @@ CREATE TABLE wallet_requests (
   });
 
   it("should perform a transfer", async () => {
-    const res = await app.request("/wallets/transfer", {
-      method: "POST",
-      body: JSON.stringify({ recipientId: sellerId, amount: 100 }),
-      headers: { 
-        Authorization: `Bearer ${buyerToken}`,
-        "Content-Type": "application/json"
-      }
-    }, env);
+    const res = await app.request(
+      "/wallets/transfer",
+      {
+        method: "POST",
+        body: JSON.stringify({ recipientId: sellerId, amount: 100 }),
+        headers: {
+          Authorization: `Bearer ${buyerToken}`,
+          "Content-Type": "application/json",
+        },
+      },
+      env
+    );
     expect(res.status).toBe(200);
     const data: any = await res.json();
     expect(data.message).toBe("Transfer successful");
@@ -173,23 +205,31 @@ CREATE TABLE wallet_requests (
   });
 
   it("should create a money request", async () => {
-    const res = await app.request("/wallets/request", {
-      method: "POST",
-      body: JSON.stringify({ targetId: buyerId, amount: 50 }),
-      headers: { 
-        Authorization: `Bearer ${sellerToken}`,
-        "Content-Type": "application/json"
-      }
-    }, env);
+    const res = await app.request(
+      "/wallets/request",
+      {
+        method: "POST",
+        body: JSON.stringify({ targetId: buyerId, amount: 50 }),
+        headers: {
+          Authorization: `Bearer ${sellerToken}`,
+          "Content-Type": "application/json",
+        },
+      },
+      env
+    );
     expect(res.status).toBe(200);
     const data: any = await res.json();
     expect(data.message).toBe("Request sent");
   });
 
   it("should get pending requests", async () => {
-    const res = await app.request("/wallets/requests/pending", {
-      headers: { Authorization: `Bearer ${buyerToken}` }
-    }, env);
+    const res = await app.request(
+      "/wallets/requests/pending",
+      {
+        headers: { Authorization: `Bearer ${buyerToken}` },
+      },
+      env
+    );
     expect(res.status).toBe(200);
     const data: any = await res.json();
     expect(data.incoming.length).toBeGreaterThan(0);
